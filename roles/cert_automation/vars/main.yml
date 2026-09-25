@@ -45,6 +45,7 @@ controller_templates:
     project: "{{ cert_aap_project_name }}"
     inventory: "Cert Automation - Localhost"
     playbook: playbooks/certs/issue_cert.yml
+    execution_environment: "{{ cert_aap_ee_name }}"
     credentials:
       - "{{ cert_aws_credential_name }}"
     survey_enabled: true
@@ -84,6 +85,7 @@ controller_templates:
     project: "{{ cert_aap_project_name }}"
     inventory: "{{ cert_inventory_name }}"
     playbook: playbooks/certs/distribute_cert.yml
+    execution_environment: "{{ cert_aap_ee_name }}"
     credentials:
       - "{{ cert_machine_credential_name }}"
     ask_limit_on_launch: true
