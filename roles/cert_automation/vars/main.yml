@@ -8,9 +8,9 @@
 controller_credentials:
   - name: "{{ cert_scm_credential_name }}"
     organization: "{{ cert_aap_org }}"
-    credential_type: "GitHub Personal Access Token"
+    credential_type: "Source Control"
     inputs:
-      token: "{{ cert_github_pat }}"
+      password: "{{ cert_github_pat }}"
 
 # --- Projects ---
 controller_projects:
