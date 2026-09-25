@@ -11,6 +11,12 @@
         ansible_user: ec2-user
       loop: "{{ cert_target_hosts.split(',') | map('trim') | list }}"
 
+    - name: Ensure temp cert directory exists
+      ansible.builtin.file:
+        path: /tmp/certs
+        state: directory
+        mode: "0700"
+
     - name: Write certificate files from workflow artifacts
       ansible.builtin.copy:
         content: "{{ item.content }}"
