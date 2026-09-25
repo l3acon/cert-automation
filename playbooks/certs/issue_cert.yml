@@ -137,6 +137,7 @@
         controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
         controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
         validate_certs: false
+        request_timeout: 10
       register: _cred_created
 
     - name: Look up Distribute JT
@@ -180,6 +181,7 @@
         controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
         controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
         validate_certs: false
+        request_timeout: 10
       register: _dist_job
 
     - name: Display distribution result
@@ -213,6 +215,7 @@
         controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
         controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
         validate_certs: false
+        request_timeout: 10
 
     - name: Summary
       ansible.builtin.debug:
