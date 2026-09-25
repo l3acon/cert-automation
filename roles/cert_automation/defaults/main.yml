@@ -10,8 +10,9 @@ cert_github_pat: ""
 cert_scm_credential_name: "GitHub PAT - Certificate Automation"
 
 # --- Execution Environment ---
-cert_aap_ee_name: "Certificate Automation EE"
-cert_aap_ee_image: "quay.io/l3acon/cert-automation-ee:latest"
+# Use the APD Product Demos EE which includes community.crypto + amazon.aws
+cert_aap_ee_name: "Product Demos EE"
+cert_aap_ee_image: "quay.io/ansible-product-demos/apd-ee-27:latest"
 
 # --- ACME / Let's Encrypt ---
 cert_acme_env: staging
