@@ -165,7 +165,7 @@
         validate_certs: false
         body_format: json
         body:
-          id: "{{ _cred_created.id }}"
+          id: "{{ _cred_created.id | int }}"
         status_code: [200, 204]
 
     - name: Launch Distribute JT
@@ -201,7 +201,7 @@
         validate_certs: false
         body_format: json
         body:
-          id: "{{ _cred_created.id }}"
+          id: "{{ _cred_created.id | int }}"
           disassociate: true
         status_code: [200, 204]
 
