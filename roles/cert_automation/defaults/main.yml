@@ -10,9 +10,9 @@ cert_github_pat: ""
 cert_scm_credential_name: "GitHub PAT - Certificate Automation"
 
 # --- Execution Environment ---
-# Cloud Services EE has community.crypto + amazon.aws for cert operations
-cert_aap_ee_name: "Cloud Services Execution Environment"
-cert_aap_ee_image: "quay.io/scottharwell/cloud-ee:latest"
+# Default EE (ee-supported-rhel9) has cryptography + community.crypto + amazon.aws
+cert_aap_ee_name: "Default execution environment"
+cert_aap_ee_image: ""
 
 # --- ACME / Let's Encrypt ---
 cert_acme_env: staging
