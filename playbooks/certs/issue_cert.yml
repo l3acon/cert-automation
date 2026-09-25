@@ -163,9 +163,8 @@
         url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
         force_basic_auth: true
         validate_certs: false
-        headers:
-          Content-Type: application/json
-        body: '{"id": {{ _cred_created.id }}}'
+        body_format: json
+        body: "{{ {'id': _cred_created.id | int} }}"
         status_code: [200, 204]
 
     - name: Launch Distribute JT
@@ -199,9 +198,8 @@
         url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
         force_basic_auth: true
         validate_certs: false
-        headers:
-          Content-Type: application/json
-        body: '{"id": {{ _cred_created.id }}, "disassociate": true}'
+        body_format: json
+        body: "{{ {'id': _cred_created.id | int, 'disassociate': true} }}"
         status_code: [200, 204]
 
     - name: Delete ephemeral TLS credential
