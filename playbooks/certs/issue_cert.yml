@@ -1,0 +1,105 @@
+---
+- name: Issue certificate via ACME DNS-01 challenge with Route53
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    acme_directory: >-
+      {{ (cert_acme_env == 'production')
+         | ternary('https://acme-v02.api.letsencrypt.org/directory',
+                   'https://acme-staging-v02.api.letsencrypt.org/directory') }}
+    acme_version: 2
+    cert_base_path: "/tmp/certs/{{ cert_acme_env }}"
+    privatekey_path: "{{ cert_base_path }}/{{ cert_hostname }}.pem"
+    fullchain_path: "{{ cert_base_path }}/fullchain.crt"
+    chain_path: "{{ cert_base_path }}/intermediate.crt"
+    account_key_path: "{{ cert_base_path }}/letsencrypt-{{ cert_acme_env }}.pem"
+    csr_path: "{{ cert_base_path }}/{{ cert_hostname }}.csr"
+    crt_path: "{{ cert_base_path }}/{{ cert_hostname }}.crt"
+
+  tasks:
+    - name: Ensure certificate directory exists
+      ansible.builtin.file:
+        path: "{{ cert_base_path }}"
+        state: directory
+        mode: "0700"
+
+    - name: Generate ACME account private key
+      community.crypto.openssl_privatekey:
+        path: "{{ account_key_path }}"
+
+    - name: Generate server private key
+      community.crypto.openssl_privatekey:
+        path: "{{ privatekey_path }}"
+
+    - name: Generate Certificate Signing Request
+      community.crypto.openssl_csr:
+        path: "{{ csr_path }}"
+        privatekey_path: "{{ privatekey_path }}"
+        common_name: "{{ cert_hostname }}"
+
+    - name: Request ACME challenge
+      community.crypto.acme_certificate:
+        terms_agreed: true
+        acme_version: "{{ acme_version }}"
+        account_key_src: "{{ account_key_path }}"
+        account_email: "{{ cert_account_email }}"
+        src: "{{ csr_path }}"
+        cert: "{{ crt_path }}"
+        challenge: dns-01
+        acme_directory: "{{ acme_directory }}"
+        remaining_days: 30
+      register: acme_challenge
+
+    - name: Create Route53 DNS-01 TXT record
+      amazon.aws.route53:
+        zone: "{{ cert_route53_zone }}"
+        record: "{{ acme_challenge.challenge_data[cert_hostname]['dns-01'].record }}"
+        type: TXT
+        ttl: 60
+        state: present
+        wait: true
+        overwrite: true
+        value: >-
+          "{{ acme_challenge.challenge_data[cert_hostname]['dns-01'].resource_value }}"
+      when:
+        - acme_challenge is changed
+        - cert_hostname in acme_challenge.challenge_data
+
+    - name: Validate challenge and retrieve certificate
+      community.crypto.acme_certificate:
+        terms_agreed: true
+        acme_version: "{{ acme_version }}"
+        account_key_src: "{{ account_key_path }}"
+        account_email: "{{ cert_account_email }}"
+        src: "{{ csr_path }}"
+        cert: "{{ crt_path }}"
+        fullchain: "{{ fullchain_path }}"
+        chain: "{{ chain_path }}"
+        challenge: dns-01
+        acme_directory: "{{ acme_directory }}"
+        remaining_days: 30
+        data: "{{ acme_challenge }}"
+      when: acme_challenge is changed
+
+    - name: Clean up Route53 TXT record
+      amazon.aws.route53:
+        zone: "{{ cert_route53_zone }}"
+        record: "{{ acme_challenge.challenge_data[cert_hostname]['dns-01'].record }}"
+        type: TXT
+        ttl: 60
+        state: absent
+        value: >-
+          "{{ acme_challenge.challenge_data[cert_hostname]['dns-01'].resource_value }}"
+      when:
+        - acme_challenge is changed
+        - cert_hostname in acme_challenge.challenge_data
+
+    - name: Display certificate paths
+      ansible.builtin.debug:
+        msg:
+          - "Certificate:  {{ crt_path }}"
+          - "Full chain:   {{ fullchain_path }}"
+          - "Private key:  {{ privatekey_path }}"
+          - "Chain:        {{ chain_path }}"

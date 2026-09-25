@@ -1,0 +1,9 @@
+# Copy this file to the project root as .env and fill in values.
+# Source it before running: source .env
+# NEVER commit the populated file to git.
+
+# AAP Controller connection
+export CONTROLLER_HOST="https://aap.example.com"
+export CONTROLLER_USERNAME="admin"
+export CONTROLLER_PASSWORD=""
+export CONTROLLER_VERIFY_SSL="true"

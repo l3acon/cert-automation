@@ -1,0 +1,15 @@
+# Credential dotfiles — NEVER commit secrets
+.env
+.*creds.yml
+
+# Ansible artifacts
+*.retry
+ansible-navigator.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Execution environment build artifacts
+execution_environments/*/context/

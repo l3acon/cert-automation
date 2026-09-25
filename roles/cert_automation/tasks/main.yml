@@ -1,0 +1,4 @@
+---
+- name: Dispatch AAP Configuration as Code
+  ansible.builtin.include_role:
+    name: infra.aap_configuration.dispatch

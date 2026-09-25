@@ -1,0 +1,5 @@
+---
+# Copy this file to the project root as .aws.creds.yml and fill in values.
+# NEVER commit the populated file to git.
+aws_access_key_id: ""
+aws_secret_access_key: ""

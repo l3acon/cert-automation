@@ -1,0 +1,19 @@
+---
+- name: Deploy Certificate Automation demo to AAP
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    CONTROLLER_HOST: "{{ lookup('env', 'CONTROLLER_HOST') }}"
+    CONTROLLER_USERNAME: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+    CONTROLLER_PASSWORD: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+    CONTROLLER_VERIFY_SSL: "{{ lookup('env', 'CONTROLLER_VERIFY_SSL') | default('true', true) }}"
+
+  tasks:
+    - name: Load AWS credentials
+      ansible.builtin.include_role:
+        name: aws_creds
+
+    - name: Configure AAP via CaC
+      ansible.builtin.include_role:
+        name: cert_automation

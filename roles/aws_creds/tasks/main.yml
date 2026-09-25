@@ -1,0 +1,15 @@
+---
+- name: Load AWS credentials from dotfile
+  ansible.builtin.include_vars:
+    file: "{{ aws_creds_file_path }}"
+
+- name: Validate required AWS variables
+  ansible.builtin.assert:
+    that:
+      - aws_access_key_id is defined
+      - aws_access_key_id | length > 0
+      - aws_secret_access_key is defined
+      - aws_secret_access_key | length > 0
+    fail_msg: >-
+      AWS credentials not found. Copy examples/aws.creds.yml to
+      .aws.creds.yml in the project root and populate it.

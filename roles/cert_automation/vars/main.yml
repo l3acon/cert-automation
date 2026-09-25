@@ -1,0 +1,185 @@
+---
+# =============================================================================
+# AAP Config as Code — controller_* variables
+# Consumed by infra.aap_configuration.dispatch
+# =============================================================================
+
+# --- Execution Environments ---
+controller_execution_environments:
+  - name: "{{ cert_aap_ee_name }}"
+    image: "{{ cert_aap_ee_image }}"
+    organization: "{{ cert_aap_org }}"
+    pull: missing
+
+# --- Credentials ---
+controller_credentials:
+  - name: "{{ cert_aws_credential_name }}"
+    organization: "{{ cert_aap_org }}"
+    credential_type: "Amazon Web Services"
+    inputs:
+      username: "{{ aws_access_key_id }}"
+      password: "{{ aws_secret_access_key }}"
+
+# --- Projects ---
+controller_projects:
+  - name: "{{ cert_aap_project_name }}"
+    organization: "{{ cert_aap_org }}"
+    scm_type: git
+    scm_url: "{{ cert_aap_project_scm_url }}"
+    scm_branch: "{{ cert_aap_project_scm_branch }}"
+    scm_update_on_launch: true
+
+# --- Inventories ---
+controller_inventories:
+  - name: "Cert Automation - Localhost"
+    organization: "{{ cert_aap_org }}"
+    description: "Runtime inventory for certificate operations"
+
+controller_hosts:
+  - name: localhost
+    inventory: "Cert Automation - Localhost"
+    variables:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ '{{ ansible_playbook_python }}' }}"
+
+# --- Job Templates ---
+controller_templates:
+  - name: "Cert - Issue Certificate"
+    organization: "{{ cert_aap_org }}"
+    project: "{{ cert_aap_project_name }}"
+    inventory: "Cert Automation - Localhost"
+    playbook: playbooks/certs/issue_cert.yml
+    execution_environment: "{{ cert_aap_ee_name }}"
+    credentials:
+      - "{{ cert_aws_credential_name }}"
+    survey_enabled: true
+    survey_spec:
+      name: "Certificate Parameters"
+      description: "Parameters for certificate issuance"
+      spec:
+        - question_name: "Hostname (FQDN)"
+          question_description: "Fully qualified domain name for the certificate"
+          variable: cert_hostname
+          type: text
+          required: true
+          default: "{{ cert_hostname }}"
+        - question_name: "Route53 Zone"
+          question_description: "AWS Route53 hosted zone for DNS-01 challenge"
+          variable: cert_route53_zone
+          type: text
+          required: true
+          default: "{{ cert_route53_zone }}"
+        - question_name: "ACME Environment"
+          question_description: "staging = test certs, production = trusted certs"
+          variable: cert_acme_env
+          type: multiplechoice
+          required: true
+          default: "{{ cert_acme_env }}"
+          choices:
+            - staging
+            - production
+        - question_name: "Account Email"
+          question_description: "Email for Let's Encrypt account registration"
+          variable: cert_account_email
+          type: text
+          required: true
+          default: "{{ cert_account_email }}"
+
+  - name: "Cert - Distribute Certificate"
+    organization: "{{ cert_aap_org }}"
+    project: "{{ cert_aap_project_name }}"
+    inventory: "Cert Automation - Localhost"
+    playbook: playbooks/certs/distribute_cert.yml
+    execution_environment: "{{ cert_aap_ee_name }}"
+    credentials:
+      - "{{ cert_aws_credential_name }}"
+      - "{{ cert_machine_credential_name }}"
+    survey_enabled: true
+    survey_spec:
+      name: "Certificate Distribution Parameters"
+      description: "Parameters for distributing certificates to hosts"
+      spec:
+        - question_name: "Hostname (FQDN)"
+          question_description: "The certificate hostname to distribute"
+          variable: cert_hostname
+          type: text
+          required: true
+          default: "{{ cert_hostname }}"
+        - question_name: "ACME Environment"
+          variable: cert_acme_env
+          type: multiplechoice
+          required: true
+          default: "{{ cert_acme_env }}"
+          choices:
+            - staging
+            - production
+        - question_name: "Target hosts (comma-separated)"
+          question_description: "Hosts that need the updated certificate"
+          variable: cert_target_hosts
+          type: text
+          required: true
+        - question_name: "Certificate destination path"
+          variable: cert_dest_path
+          type: text
+          required: true
+          default: "/etc/pki/tls/certs/fullchain.crt"
+        - question_name: "Private key destination path"
+          variable: cert_key_dest_path
+          type: text
+          required: true
+          default: "/etc/pki/tls/private/server.key"
+
+# --- Workflow ---
+controller_workflows:
+  - name: "Cert - Issue and Distribute"
+    organization: "{{ cert_aap_org }}"
+    description: "Issue a certificate via Let's Encrypt and distribute to target hosts"
+    survey_enabled: true
+    survey_spec:
+      name: "End-to-End Certificate Parameters"
+      description: "Issue and distribute a certificate in one workflow"
+      spec:
+        - question_name: "Hostname (FQDN)"
+          variable: cert_hostname
+          type: text
+          required: true
+          default: "{{ cert_hostname }}"
+        - question_name: "Route53 Zone"
+          variable: cert_route53_zone
+          type: text
+          required: true
+          default: "{{ cert_route53_zone }}"
+        - question_name: "ACME Environment"
+          variable: cert_acme_env
+          type: multiplechoice
+          required: true
+          default: "{{ cert_acme_env }}"
+          choices:
+            - staging
+            - production
+        - question_name: "Account Email"
+          variable: cert_account_email
+          type: text
+          required: true
+          default: "{{ cert_account_email }}"
+        - question_name: "Target hosts (comma-separated)"
+          variable: cert_target_hosts
+          type: text
+          required: true
+        - question_name: "Certificate destination path"
+          variable: cert_dest_path
+          type: text
+          required: true
+          default: "/etc/pki/tls/certs/fullchain.crt"
+        - question_name: "Private key destination path"
+          variable: cert_key_dest_path
+          type: text
+          required: true
+          default: "/etc/pki/tls/private/server.key"
+    simplified_workflow_nodes:
+      - identifier: issue
+        unified_job_template: "Cert - Issue Certificate"
+        success_nodes:
+          - distribute
+      - identifier: distribute
+        unified_job_template: "Cert - Distribute Certificate"
