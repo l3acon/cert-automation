@@ -106,6 +106,15 @@ controller_templates:
           choices:
             - "false"
             - "true"
+        - question_name: "Clean up ephemeral TLS credential after distribution?"
+          question_description: "Set to false to keep the credential in AAP for auditability"
+          variable: cert_cleanup_credential
+          type: multiplechoice
+          required: true
+          default: "false"
+          choices:
+            - "false"
+            - "true"
 
   - name: "Cert - Distribute Certificate"
     organization: "{{ cert_aap_org }}"
@@ -174,6 +183,15 @@ controller_workflows:
         - question_name: "Clean up DNS TXT record after validation?"
           question_description: "Set to false to preserve the record for auditability"
           variable: cert_cleanup_dns_record
+          type: multiplechoice
+          required: true
+          default: "false"
+          choices:
+            - "false"
+            - "true"
+        - question_name: "Clean up ephemeral TLS credential after distribution?"
+          question_description: "Set to false to keep the credential in AAP for auditability"
+          variable: cert_cleanup_credential
           type: multiplechoice
           required: true
           default: "false"
