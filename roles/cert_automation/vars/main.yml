@@ -4,7 +4,32 @@
 # Consumed by infra.aap_configuration.dispatch
 # =============================================================================
 
-# --- SCM Credential (GitHub PAT for private repo) ---
+# --- Custom Credential Type: TLS Certificate ---
+# Uses file injectors so AAP writes cert/key to temp files and exposes paths.
+controller_credential_types:
+  - name: "{{ cert_tls_credential_type_name }}"
+    kind: cloud
+    inputs:
+      fields:
+        - id: cert_fullchain
+          label: Full Chain Certificate
+          type: string
+          secret: true
+          multiline: true
+        - id: cert_private_key
+          label: Private Key
+          type: string
+          secret: true
+          multiline: true
+    injectors:
+      file:
+        template.cert_fullchain: "{% raw %}{{ cert_fullchain }}{% endraw %}"
+        template.cert_private_key: "{% raw %}{{ cert_private_key }}{% endraw %}"
+      env:
+        CERT_FULLCHAIN_FILE: "{% raw %}{{ tower.filename.cert_fullchain }}{% endraw %}"
+        CERT_PRIVATE_KEY_FILE: "{% raw %}{{ tower.filename.cert_private_key }}{% endraw %}"
+
+# --- SCM Credential ---
 controller_credentials:
   - name: "{{ cert_scm_credential_name }}"
     organization: "{{ cert_aap_org }}"
@@ -25,7 +50,6 @@ controller_projects:
     wait: true
 
 # --- Inventories ---
-# Localhost inventory for the issue_cert playbook (runs locally)
 controller_inventories:
   - name: "Cert Automation - Localhost"
     organization: "{{ cert_aap_org }}"
@@ -48,24 +72,24 @@ controller_templates:
     execution_environment: "{{ cert_aap_ee_name }}"
     credentials:
       - "{{ cert_aws_credential_name }}"
+      - "{{ cert_aap_credential_name }}"
+    extra_vars:
+      aap_request_timeout: 10
     survey_enabled: true
     survey_spec:
       name: "Certificate Parameters"
-      description: "Parameters for certificate issuance"
+      description: "Issue a certificate and distribute to target hosts"
       spec:
         - question_name: "Hostname (FQDN)"
-          question_description: "Fully qualified domain name for the certificate"
           variable: cert_hostname
           type: text
           required: true
         - question_name: "Route53 Zone"
-          question_description: "AWS Route53 hosted zone for DNS-01 challenge"
           variable: cert_route53_zone
           type: text
           required: true
           default: "{{ cert_route53_zone }}"
         - question_name: "ACME Environment"
-          question_description: "staging = test certs, production = trusted certs"
           variable: cert_acme_env
           type: multiplechoice
           required: true
@@ -74,11 +98,25 @@ controller_templates:
             - staging
             - production
         - question_name: "Account Email"
-          question_description: "Email for Let's Encrypt account registration"
           variable: cert_account_email
           type: text
           required: true
           default: "{{ cert_account_email }}"
+        - question_name: "Target hosts (comma-separated IPs)"
+          question_description: "Hosts to receive the certificate after issuance"
+          variable: cert_target_hosts
+          type: text
+          required: true
+        - question_name: "Certificate destination path"
+          variable: cert_dest_path
+          type: text
+          required: true
+          default: "{{ cert_dest_path }}"
+        - question_name: "Private key destination path"
+          variable: cert_key_dest_path
+          type: text
+          required: true
+          default: "{{ cert_key_dest_path }}"
 
   - name: "Cert - Distribute Certificate"
     organization: "{{ cert_aap_org }}"
@@ -87,28 +125,13 @@ controller_templates:
     playbook: playbooks/certs/distribute_cert.yml
     execution_environment: "{{ cert_aap_ee_name }}"
     credentials:
-      - "{{ cert_aws_credential_name }}"
       - "{{ cert_machine_credential_name }}"
     survey_enabled: true
     survey_spec:
-      name: "Certificate Distribution Parameters"
-      description: "Parameters for distributing certificates to hosts"
+      name: "Distribution Parameters"
+      description: "Distribute a certificate to target hosts (cert comes from TLS credential)"
       spec:
-        - question_name: "Hostname (FQDN)"
-          question_description: "The certificate hostname to distribute"
-          variable: cert_hostname
-          type: text
-          required: true
-        - question_name: "ACME Environment"
-          variable: cert_acme_env
-          type: multiplechoice
-          required: true
-          default: "{{ cert_acme_env }}"
-          choices:
-            - staging
-            - production
-        - question_name: "Target hosts (comma-separated IPs or hostnames)"
-          question_description: "Hosts to receive the certificate"
+        - question_name: "Target hosts (comma-separated IPs)"
           variable: cert_target_hosts
           type: text
           required: true
@@ -116,22 +139,22 @@ controller_templates:
           variable: cert_dest_path
           type: text
           required: true
-          default: "/etc/pki/tls/certs/fullchain.crt"
+          default: "{{ cert_dest_path }}"
         - question_name: "Private key destination path"
           variable: cert_key_dest_path
           type: text
           required: true
-          default: "/etc/pki/tls/private/server.key"
+          default: "{{ cert_key_dest_path }}"
 
-# --- Workflow ---
+# --- Workflow: Staging to Production ---
 controller_workflows:
-  - name: "Cert - Issue and Distribute"
+  - name: "Cert - Staging to Production"
     organization: "{{ cert_aap_org }}"
-    description: "Issue a certificate via Let's Encrypt and distribute to target hosts"
+    description: "Issue and distribute a certificate in staging, then repeat in production on success"
     survey_enabled: true
     survey_spec:
-      name: "End-to-End Certificate Parameters"
-      description: "Issue and distribute a certificate in one workflow"
+      name: "Staging to Production Parameters"
+      description: "Certificate parameters for staged rollout"
       spec:
         - question_name: "Hostname (FQDN)"
           variable: cert_hostname
@@ -142,21 +165,12 @@ controller_workflows:
           type: text
           required: true
           default: "{{ cert_route53_zone }}"
-        - question_name: "ACME Environment"
-          variable: cert_acme_env
-          type: multiplechoice
-          required: true
-          default: "{{ cert_acme_env }}"
-          choices:
-            - staging
-            - production
         - question_name: "Account Email"
           variable: cert_account_email
           type: text
           required: true
           default: "{{ cert_account_email }}"
-        - question_name: "Target hosts (limit pattern)"
-          question_description: "AAP inventory limit pattern for distribution (e.g. aws_rhel9)"
+        - question_name: "Target hosts (comma-separated IPs)"
           variable: cert_target_hosts
           type: text
           required: true
@@ -164,16 +178,20 @@ controller_workflows:
           variable: cert_dest_path
           type: text
           required: true
-          default: "/etc/pki/tls/certs/fullchain.crt"
+          default: "{{ cert_dest_path }}"
         - question_name: "Private key destination path"
           variable: cert_key_dest_path
           type: text
           required: true
-          default: "/etc/pki/tls/private/server.key"
+          default: "{{ cert_key_dest_path }}"
     simplified_workflow_nodes:
-      - identifier: issue
+      - identifier: staging
         unified_job_template: "Cert - Issue Certificate"
+        extra_data:
+          cert_acme_env: staging
         success_nodes:
-          - distribute
-      - identifier: distribute
-        unified_job_template: "Cert - Distribute Certificate"
+          - production
+      - identifier: production
+        unified_job_template: "Cert - Issue Certificate"
+        extra_data:
+          cert_acme_env: production

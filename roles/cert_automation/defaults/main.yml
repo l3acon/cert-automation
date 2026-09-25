@@ -10,9 +10,7 @@ cert_github_pat: ""
 cert_scm_credential_name: "GitHub PAT - Certificate Automation"
 
 # --- Execution Environment ---
-# Default EE (ee-supported-rhel9) has cryptography + community.crypto + amazon.aws
 cert_aap_ee_name: "Default execution environment"
-cert_aap_ee_image: ""
 
 # --- ACME / Let's Encrypt ---
 cert_acme_env: staging
@@ -22,18 +20,16 @@ cert_account_email: "matferna@redhat.com"
 cert_route53_zone: ""
 cert_hostname: ""
 
-# --- Certificate paths (on the bastion / localhost running the job) ---
-cert_base_path: "/tmp/certs/{{ cert_acme_env }}"
-cert_privatekey_path: "{{ cert_base_path }}/{{ cert_hostname }}.pem"
-cert_fullchain_path: "{{ cert_base_path }}/fullchain.crt"
-cert_chain_path: "{{ cert_base_path }}/intermediate.crt"
-cert_account_key_path: "{{ cert_base_path }}/letsencrypt-{{ cert_acme_env }}.pem"
-cert_csr_path: "{{ cert_base_path }}/{{ cert_hostname }}.csr"
-cert_crt_path: "{{ cert_base_path }}/{{ cert_hostname }}.crt"
+# --- Certificate paths (defaults for distribute targets) ---
+cert_dest_path: "/etc/pki/tls/certs/fullchain.crt"
+cert_key_dest_path: "/etc/pki/tls/private/server.key"
 
-# --- AAP credential names (referenced by templates) ---
+# --- AAP credential names ---
 cert_aws_credential_name: "AWS"
 cert_machine_credential_name: "APD Machine Credential"
+cert_aap_credential_name: "AAP Credential"
+cert_tls_credential_type_name: "TLS Certificate"
+cert_ephemeral_credential_name: "TLS Cert - {{ cert_hostname | default('pending') }}"
 
-# --- APD Inventory (reuse the existing EC2 inventory) ---
+# --- APD Inventory ---
 cert_inventory_name: "Ansible Product Demos Inventory"

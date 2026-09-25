@@ -1,36 +1,18 @@
 ---
-- name: Build target host list from survey
+# Distribute a certificate to target hosts.
+# Cert and key are injected by the TLS Certificate credential as temp files.
+# Env vars CERT_FULLCHAIN_FILE and CERT_PRIVATE_KEY_FILE hold the file paths.
+- name: Build target host list
   hosts: localhost
   connection: local
   gather_facts: false
   tasks:
-    - name: Add survey target hosts to runtime inventory
+    - name: Add target hosts to runtime inventory
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: cert_targets
         ansible_user: ec2-user
       loop: "{{ cert_target_hosts.split(',') | map('trim') | list }}"
-
-    - name: Ensure temp cert directory exists
-      ansible.builtin.file:
-        path: /tmp/certs
-        state: directory
-        mode: "0700"
-
-    - name: Write certificate files from workflow artifacts
-      ansible.builtin.copy:
-        content: "{{ item.content }}"
-        dest: "{{ item.dest }}"
-        mode: "{{ item.mode }}"
-      loop:
-        - content: "{{ cert_fullchain_content }}"
-          dest: "/tmp/certs/fullchain.crt"
-          mode: "0644"
-        - content: "{{ cert_privatekey_content }}"
-          dest: "/tmp/certs/server.key"
-          mode: "0600"
-      loop_control:
-        label: "{{ item.dest }}"
 
 - name: Distribute certificate to target hosts
   hosts: cert_targets
@@ -49,17 +31,15 @@
 
     - name: Copy fullchain certificate
       ansible.builtin.copy:
-        src: "/tmp/certs/fullchain.crt"
+        src: "{{ lookup('env', 'CERT_FULLCHAIN_FILE') }}"
         dest: "{{ cert_dest_path }}"
         mode: "0644"
-      notify: reload_services
 
     - name: Copy private key
       ansible.builtin.copy:
-        src: "/tmp/certs/server.key"
+        src: "{{ lookup('env', 'CERT_PRIVATE_KEY_FILE') }}"
         dest: "{{ cert_key_dest_path }}"
         mode: "0600"
-      notify: reload_services
 
     - name: Display deployed certificate info
       ansible.builtin.debug:
