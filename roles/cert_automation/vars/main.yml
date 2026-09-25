@@ -64,6 +64,11 @@ controller_templates:
           variable: cert_ansible_hostname
           type: text
           required: true
+        - question_name: "AWS Region"
+          variable: cert_aws_region
+          type: text
+          required: true
+          default: "{{ cert_aws_region }}"
         - question_name: "Route53 Zone"
           variable: cert_route53_zone
           type: text

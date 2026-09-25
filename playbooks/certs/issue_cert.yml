@@ -14,21 +14,16 @@
   connection: local
   gather_facts: false
 
+  environment:
+    AWS_DEFAULT_REGION: "{{ cert_aws_region | default('us-east-2') }}"
+
   vars:
     acme_directory: >-
       {{ (cert_acme_env == 'production')
          | ternary('https://acme-v02.api.letsencrypt.org/directory',
                    'https://acme-staging-v02.api.letsencrypt.org/directory') }}
     acme_version: 2
-    cert_cleanup_dns_record: "{{ cert_cleanup_dns_record | default('false') }}"
     cert_base_path: "/tmp/certs/{{ cert_acme_env }}"
-    privatekey_path: "{{ cert_base_path }}/{{ cert_hostname }}.pem"
-    fullchain_path: "{{ cert_base_path }}/fullchain.crt"
-    chain_path: "{{ cert_base_path }}/intermediate.crt"
-    account_key_path: "{{ cert_base_path }}/letsencrypt-{{ cert_acme_env }}.pem"
-    csr_path: "{{ cert_base_path }}/{{ cert_hostname }}.csr"
-    crt_path: "{{ cert_base_path }}/{{ cert_hostname }}.crt"
-    _ephemeral_cred_name: "TLS Cert - {{ cert_hostname }} ({{ cert_acme_env }})"
     _distribute_jt_name: "Cert - Distribute Certificate"
 
   tasks:
@@ -56,6 +51,16 @@
         _ec2_instance: "{{ _instance }}"
         cert_target_ip: "{{ _instance.public_ip_address | default(_instance.private_ip_address) }}"
         cert_hostname: "{{ _instance.tags.FQDN | default(_dns_name) }}"
+
+    - name: Set derived paths from resolved hostname
+      ansible.builtin.set_fact:
+        privatekey_path: "{{ cert_base_path }}/{{ cert_hostname }}.pem"
+        fullchain_path: "{{ cert_base_path }}/fullchain.crt"
+        chain_path: "{{ cert_base_path }}/intermediate.crt"
+        account_key_path: "{{ cert_base_path }}/letsencrypt-{{ cert_acme_env }}.pem"
+        csr_path: "{{ cert_base_path }}/{{ cert_hostname }}.csr"
+        crt_path: "{{ cert_base_path }}/{{ cert_hostname }}.crt"
+        _ephemeral_cred_name: "TLS Cert - {{ cert_hostname }} ({{ cert_acme_env }})"
 
     - name: Display resolved host info
       ansible.builtin.debug:

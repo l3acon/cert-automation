@@ -16,6 +16,9 @@ cert_aap_ee_name: "Default execution environment"
 cert_acme_env: staging
 cert_account_email: "matferna@redhat.com"
 
+# --- AWS ---
+cert_aws_region: us-east-2
+
 # --- Domain / Route53 ---
 cert_route53_zone: ""
 cert_ansible_hostname: ""
