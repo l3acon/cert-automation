@@ -189,30 +189,30 @@
           - "Distribution job: {{ _dist_job.id | default('?') }}"
           - "Status: {{ _dist_job.status | default('?') }}"
 
-    # ── Cleanup: remove ephemeral credential ─────────────────────────────
-    - name: Detach ephemeral TLS credential from Distribute JT
-      ansible.builtin.uri:
-        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
-        method: POST
-        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        force_basic_auth: true
-        validate_certs: false
-        body_format: json
-        body: "{{ {'id': _cred_created.id | int, 'disassociate': true} }}"
-        status_code: [200, 204]
+    ## ── Cleanup: remove ephemeral credential ─────────────────────────────
+    #- name: Detach ephemeral TLS credential from Distribute JT
+    #  ansible.builtin.uri:
+    #    url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
+    #    method: POST
+    #    url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+    #    url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+    #    force_basic_auth: true
+    #    validate_certs: false
+    #    body_format: json
+    #    body: "{{ {'id': _cred_created.id | int, 'disassociate': true} }}"
+    #    status_code: [200, 204]
 
-    - name: Delete ephemeral TLS credential
-      ansible.controller.credential:
-        name: "{{ _ephemeral_cred_name }}"
-        organization: Default
-        credential_type: "TLS Certificate"
-        state: absent
-        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
-        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        validate_certs: false
-        request_timeout: 10
+    #- name: Delete ephemeral TLS credential
+    #  ansible.controller.credential:
+    #    name: "{{ _ephemeral_cred_name }}"
+    #    organization: Default
+    #    credential_type: "TLS Certificate"
+    #    state: absent
+    #    controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
+    #    controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+    #    controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+    #    validate_certs: false
+    #    request_timeout: 10
 
     - name: Summary
       ansible.builtin.debug:
