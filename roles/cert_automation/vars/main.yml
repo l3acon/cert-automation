@@ -4,21 +4,13 @@
 # Consumed by infra.aap_configuration.dispatch
 # =============================================================================
 
-# --- Execution Environments ---
-controller_execution_environments:
-  - name: "{{ cert_aap_ee_name }}"
-    image: "{{ cert_aap_ee_image }}"
-    organization: "{{ cert_aap_org }}"
-    pull: missing
-
-# --- Credentials ---
+# --- SCM Credential (GitHub PAT for private repo) ---
 controller_credentials:
-  - name: "{{ cert_aws_credential_name }}"
+  - name: "{{ cert_scm_credential_name }}"
     organization: "{{ cert_aap_org }}"
-    credential_type: "Amazon Web Services"
+    credential_type: "GitHub Personal Access Token"
     inputs:
-      username: "{{ aws_access_key_id }}"
-      password: "{{ aws_secret_access_key }}"
+      token: "{{ cert_github_pat }}"
 
 # --- Projects ---
 controller_projects:
@@ -28,12 +20,15 @@ controller_projects:
     scm_url: "{{ cert_aap_project_scm_url }}"
     scm_branch: "{{ cert_aap_project_scm_branch }}"
     scm_update_on_launch: true
+    credential: "{{ cert_scm_credential_name }}"
+    wait: true
 
 # --- Inventories ---
+# Localhost inventory for the issue_cert playbook (runs locally)
 controller_inventories:
   - name: "Cert Automation - Localhost"
     organization: "{{ cert_aap_org }}"
-    description: "Runtime inventory for certificate operations"
+    description: "Runtime inventory for certificate operations (localhost)"
 
 controller_hosts:
   - name: localhost
@@ -49,7 +44,6 @@ controller_templates:
     project: "{{ cert_aap_project_name }}"
     inventory: "Cert Automation - Localhost"
     playbook: playbooks/certs/issue_cert.yml
-    execution_environment: "{{ cert_aap_ee_name }}"
     credentials:
       - "{{ cert_aws_credential_name }}"
     survey_enabled: true
@@ -62,7 +56,6 @@ controller_templates:
           variable: cert_hostname
           type: text
           required: true
-          default: "{{ cert_hostname }}"
         - question_name: "Route53 Zone"
           question_description: "AWS Route53 hosted zone for DNS-01 challenge"
           variable: cert_route53_zone
@@ -88,12 +81,11 @@ controller_templates:
   - name: "Cert - Distribute Certificate"
     organization: "{{ cert_aap_org }}"
     project: "{{ cert_aap_project_name }}"
-    inventory: "Cert Automation - Localhost"
+    inventory: "{{ cert_inventory_name }}"
     playbook: playbooks/certs/distribute_cert.yml
-    execution_environment: "{{ cert_aap_ee_name }}"
     credentials:
-      - "{{ cert_aws_credential_name }}"
       - "{{ cert_machine_credential_name }}"
+    ask_limit_on_launch: true
     survey_enabled: true
     survey_spec:
       name: "Certificate Distribution Parameters"
@@ -104,7 +96,6 @@ controller_templates:
           variable: cert_hostname
           type: text
           required: true
-          default: "{{ cert_hostname }}"
         - question_name: "ACME Environment"
           variable: cert_acme_env
           type: multiplechoice
@@ -113,11 +104,6 @@ controller_templates:
           choices:
             - staging
             - production
-        - question_name: "Target hosts (comma-separated)"
-          question_description: "Hosts that need the updated certificate"
-          variable: cert_target_hosts
-          type: text
-          required: true
         - question_name: "Certificate destination path"
           variable: cert_dest_path
           type: text
@@ -143,7 +129,6 @@ controller_workflows:
           variable: cert_hostname
           type: text
           required: true
-          default: "{{ cert_hostname }}"
         - question_name: "Route53 Zone"
           variable: cert_route53_zone
           type: text
@@ -162,7 +147,8 @@ controller_workflows:
           type: text
           required: true
           default: "{{ cert_account_email }}"
-        - question_name: "Target hosts (comma-separated)"
+        - question_name: "Target hosts (limit pattern)"
+          question_description: "AAP inventory limit pattern for distribution (e.g. aws_rhel9)"
           variable: cert_target_hosts
           type: text
           required: true
@@ -183,3 +169,4 @@ controller_workflows:
           - distribute
       - identifier: distribute
         unified_job_template: "Cert - Distribute Certificate"
+        limit: "{{ '{{ cert_target_hosts }}' }}"

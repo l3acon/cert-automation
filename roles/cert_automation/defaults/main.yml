@@ -5,20 +5,17 @@ cert_aap_project_name: "Certificate Automation"
 cert_aap_project_scm_url: "https://github.com/l3acon/cert-automation.git"
 cert_aap_project_scm_branch: main
 
+# --- SCM credential (GitHub PAT for private repo) ---
+cert_github_pat: ""
+cert_scm_credential_name: "GitHub PAT - Certificate Automation"
+
 # --- Execution Environment ---
 cert_aap_ee_name: "Certificate Automation EE"
 cert_aap_ee_image: "quay.io/l3acon/cert-automation-ee:latest"
 
 # --- ACME / Let's Encrypt ---
-# staging — safe for testing; switch to production for real certs
-cert_acme_directory: "https://acme-staging-v02.api.letsencrypt.org/directory"
 cert_acme_env: staging
-# production:
-# cert_acme_directory: "https://acme-v02.api.letsencrypt.org/directory"
-# cert_acme_env: production
-
-cert_acme_version: 2
-cert_account_email: ""
+cert_account_email: "matferna@redhat.com"
 
 # --- Domain / Route53 ---
 cert_route53_zone: ""
@@ -34,5 +31,8 @@ cert_csr_path: "{{ cert_base_path }}/{{ cert_hostname }}.csr"
 cert_crt_path: "{{ cert_base_path }}/{{ cert_hostname }}.crt"
 
 # --- AAP credential names (referenced by templates) ---
-cert_aws_credential_name: "AWS - Certificate Automation"
-cert_machine_credential_name: "Machine - Certificate Automation"
+cert_aws_credential_name: "AWS"
+cert_machine_credential_name: "APD Machine Credential"
+
+# --- APD Inventory (reuse the existing EC2 inventory) ---
+cert_inventory_name: "Ansible Product Demos Inventory"

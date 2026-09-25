@@ -1,19 +1,36 @@
 ---
-- name: Deploy Certificate Automation demo to AAP
+# Deploy Certificate Automation CasC to AAP.
+# Usage:
+#   source .env && ansible-playbook deploy_certs.yml
+- name: Deploy Certificate Automation to AAP
   hosts: localhost
   connection: local
   gather_facts: false
-  environment:
-    CONTROLLER_HOST: "{{ lookup('env', 'CONTROLLER_HOST') }}"
-    CONTROLLER_USERNAME: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-    CONTROLLER_PASSWORD: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-    CONTROLLER_VERIFY_SSL: "{{ lookup('env', 'CONTROLLER_VERIFY_SSL') | default('true', true) }}"
+
+  vars:
+    aap_hostname: "{{ lookup('env', 'CONTROLLER_HOST') }}"
+    aap_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+    aap_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+    cert_github_pat: "{{ lookup('env', 'GITHUB_PAT') }}"
+    cert_route53_zone: "{{ lookup('env', 'CERT_ROUTE53_ZONE') | default('sandbox5245.opentlc.com', true) }}"
 
   tasks:
-    - name: Load AWS credentials
-      ansible.builtin.include_role:
-        name: aws_creds
+    - name: Validate credentials
+      ansible.builtin.assert:
+        that:
+          - aap_hostname | length > 0
+          - aap_username | length > 0
+          - aap_password | length > 0
+          - cert_github_pat | length > 0
+        fail_msg: >-
+          Missing credentials. Set CONTROLLER_HOST, CONTROLLER_USERNAME,
+          CONTROLLER_PASSWORD, and GITHUB_PAT.
 
-    - name: Configure AAP via CaC
+    - name: Configure AAP via CasC
       ansible.builtin.include_role:
         name: cert_automation
+      vars:
+        controller_host: "{{ aap_hostname }}"
+        controller_username: "{{ aap_username }}"
+        controller_password: "{{ aap_password }}"
+        validate_certs: false

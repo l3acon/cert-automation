@@ -1,24 +1,6 @@
 ---
 - name: Distribute certificate to target hosts
-  hosts: localhost
-  connection: local
-  gather_facts: false
-
-  vars:
-    cert_base_path: "/tmp/certs/{{ cert_acme_env }}"
-    fullchain_path: "{{ cert_base_path }}/fullchain.crt"
-    privatekey_path: "{{ cert_base_path }}/{{ cert_hostname }}.pem"
-    target_host_list: "{{ cert_target_hosts.split(',') | map('trim') | list }}"
-
-  tasks:
-    - name: Add target hosts to runtime inventory
-      ansible.builtin.add_host:
-        name: "{{ item }}"
-        groups: cert_targets
-      loop: "{{ target_host_list }}"
-
-- name: Deploy certificates to targets
-  hosts: cert_targets
+  hosts: all
   gather_facts: false
   become: true
 
@@ -50,6 +32,13 @@
         dest: "{{ cert_key_dest_path }}"
         mode: "0600"
       notify: reload_services
+
+    - name: Display deployed certificate info
+      ansible.builtin.debug:
+        msg:
+          - "Certificate deployed to {{ inventory_hostname }}"
+          - "  Fullchain: {{ cert_dest_path }}"
+          - "  Private key: {{ cert_key_dest_path }}"
 
   handlers:
     - name: Reload web services
