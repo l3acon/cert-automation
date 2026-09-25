@@ -11,15 +11,25 @@
         ansible_user: ec2-user
       loop: "{{ cert_target_hosts.split(',') | map('trim') | list }}"
 
+    - name: Write certificate files from workflow artifacts
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - content: "{{ cert_fullchain_content }}"
+          dest: "/tmp/certs/fullchain.crt"
+          mode: "0644"
+        - content: "{{ cert_privatekey_content }}"
+          dest: "/tmp/certs/server.key"
+          mode: "0600"
+      loop_control:
+        label: "{{ item.dest }}"
+
 - name: Distribute certificate to target hosts
   hosts: cert_targets
   gather_facts: false
   become: true
-
-  vars:
-    cert_base_path: "/tmp/certs/{{ cert_acme_env }}"
-    fullchain_path: "{{ cert_base_path }}/fullchain.crt"
-    privatekey_path: "{{ cert_base_path }}/{{ cert_hostname }}.pem"
 
   tasks:
     - name: Ensure destination directories exist
@@ -33,14 +43,14 @@
 
     - name: Copy fullchain certificate
       ansible.builtin.copy:
-        src: "{{ fullchain_path }}"
+        src: "/tmp/certs/fullchain.crt"
         dest: "{{ cert_dest_path }}"
         mode: "0644"
       notify: reload_services
 
     - name: Copy private key
       ansible.builtin.copy:
-        src: "{{ privatekey_path }}"
+        src: "/tmp/certs/server.key"
         dest: "{{ cert_key_dest_path }}"
         mode: "0600"
       notify: reload_services

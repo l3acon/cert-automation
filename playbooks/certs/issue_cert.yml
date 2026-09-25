@@ -103,3 +103,14 @@
           - "Full chain:   {{ fullchain_path }}"
           - "Private key:  {{ privatekey_path }}"
           - "Chain:        {{ chain_path }}"
+
+    - name: Read certificate files for workflow artifact passing
+      ansible.builtin.set_fact:
+        _cert_fullchain: "{{ lookup('file', fullchain_path) }}"
+        _cert_privatekey: "{{ lookup('file', privatekey_path) }}"
+
+    - name: Publish certificate artifacts for downstream workflow nodes
+      ansible.builtin.set_stats:
+        data:
+          cert_fullchain_content: "{{ _cert_fullchain }}"
+          cert_privatekey_content: "{{ _cert_privatekey }}"
