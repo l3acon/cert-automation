@@ -83,12 +83,12 @@ controller_templates:
   - name: "Cert - Distribute Certificate"
     organization: "{{ cert_aap_org }}"
     project: "{{ cert_aap_project_name }}"
-    inventory: "{{ cert_inventory_name }}"
+    inventory: "Cert Automation - Localhost"
     playbook: playbooks/certs/distribute_cert.yml
     execution_environment: "{{ cert_aap_ee_name }}"
     credentials:
+      - "{{ cert_aws_credential_name }}"
       - "{{ cert_machine_credential_name }}"
-    ask_limit_on_launch: true
     survey_enabled: true
     survey_spec:
       name: "Certificate Distribution Parameters"
@@ -107,6 +107,11 @@ controller_templates:
           choices:
             - staging
             - production
+        - question_name: "Target hosts (comma-separated IPs or hostnames)"
+          question_description: "Hosts to receive the certificate"
+          variable: cert_target_hosts
+          type: text
+          required: true
         - question_name: "Certificate destination path"
           variable: cert_dest_path
           type: text
@@ -172,4 +177,3 @@ controller_workflows:
           - distribute
       - identifier: distribute
         unified_job_template: "Cert - Distribute Certificate"
-        limit: "{{ '{{ cert_target_hosts }}' }}"

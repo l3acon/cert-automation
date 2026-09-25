@@ -1,6 +1,18 @@
 ---
+- name: Build target host list from survey
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Add survey target hosts to runtime inventory
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: cert_targets
+        ansible_user: ec2-user
+      loop: "{{ cert_target_hosts.split(',') | map('trim') | list }}"
+
 - name: Distribute certificate to target hosts
-  hosts: all
+  hosts: cert_targets
   gather_facts: false
   become: true
 
