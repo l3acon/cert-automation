@@ -20,6 +20,7 @@
          | ternary('https://acme-v02.api.letsencrypt.org/directory',
                    'https://acme-staging-v02.api.letsencrypt.org/directory') }}
     acme_version: 2
+    cert_cleanup_dns_record: "{{ cert_cleanup_dns_record | default('false') }}"
     cert_base_path: "/tmp/certs/{{ cert_acme_env }}"
     privatekey_path: "{{ cert_base_path }}/{{ cert_hostname }}.pem"
     fullchain_path: "{{ cert_base_path }}/fullchain.crt"
@@ -31,6 +32,38 @@
     _distribute_jt_name: "Cert - Distribute Certificate"
 
   tasks:
+    # ── Resolve ansible hostname to FQDN + IP via EC2 ───────────────────
+    - name: Look up EC2 instance by Name tag
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Name": "{{ cert_ansible_hostname }}"
+          instance-state-name: running
+      register: ec2_lookup
+
+    - name: Validate instance was found
+      ansible.builtin.assert:
+        that:
+          - ec2_lookup.instances | length > 0
+        fail_msg: >-
+          No running EC2 instance found with Name tag '{{ cert_ansible_hostname }}'.
+          Verify the host exists and is running.
+
+    - name: Set host facts from EC2 instance
+      ansible.builtin.set_fact:
+        _ec2_instance: "{{ ec2_lookup.instances[0] }}"
+        cert_target_ip: "{{ ec2_lookup.instances[0].public_ip_address | default(ec2_lookup.instances[0].private_ip_address) }}"
+        cert_hostname: >-
+          {{ ec2_lookup.instances[0].tags.FQDN
+             | default(ec2_lookup.instances[0].public_dns_name) }}
+
+    - name: Display resolved host info
+      ansible.builtin.debug:
+        msg:
+          - "Ansible hostname: {{ cert_ansible_hostname }}"
+          - "Resolved FQDN:   {{ cert_hostname }}"
+          - "Target IP:        {{ cert_target_ip }}"
+          - "Instance ID:      {{ _ec2_instance.instance_id }}"
+
     # ── Issue the certificate ────────────────────────────────────────────
     - name: Ensure certificate directory exists
       ansible.builtin.file:
@@ -106,6 +139,7 @@
         value: >-
           "{{ acme_challenge.challenge_data[cert_hostname]['dns-01'].resource_value }}"
       when:
+        - cert_cleanup_dns_record | bool
         - acme_challenge is changed
         - cert_hostname in acme_challenge.challenge_data
 
@@ -116,6 +150,7 @@
           - "Full chain:   {{ fullchain_path }}"
           - "Private key:  {{ privatekey_path }}"
           - "Chain:        {{ chain_path }}"
+          - "DNS TXT record preserved: {{ not (cert_cleanup_dns_record | bool) }}"
 
     # ── Read cert content for credential creation ────────────────────────
     - name: Read issued certificate and key
@@ -171,7 +206,7 @@
       ansible.controller.job_launch:
         job_template: "{{ _distribute_jt_name }}"
         extra_vars:
-          cert_target_hosts: "{{ cert_target_hosts }}"
+          cert_target_hosts: "{{ cert_target_ip }}"
           cert_dest_path: "{{ cert_dest_path }}"
           cert_key_dest_path: "{{ cert_key_dest_path }}"
         wait: true
@@ -189,30 +224,30 @@
           - "Distribution job: {{ _dist_job.id | default('?') }}"
           - "Status: {{ _dist_job.status | default('?') }}"
 
-    ## ── Cleanup: remove ephemeral credential ─────────────────────────────
-    #- name: Detach ephemeral TLS credential from Distribute JT
-    #  ansible.builtin.uri:
-    #    url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
-    #    method: POST
-    #    url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-    #    url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-    #    force_basic_auth: true
-    #    validate_certs: false
-    #    body_format: json
-    #    body: "{{ {'id': _cred_created.id | int, 'disassociate': true} }}"
-    #    status_code: [200, 204]
+    # ── Cleanup: remove ephemeral credential ─────────────────────────────
+    - name: Detach ephemeral TLS credential from Distribute JT
+      ansible.builtin.uri:
+        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
+        method: POST
+        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body: "{{ {'id': _cred_created.id | int, 'disassociate': true} }}"
+        status_code: [200, 204]
 
-    #- name: Delete ephemeral TLS credential
-    #  ansible.controller.credential:
-    #    name: "{{ _ephemeral_cred_name }}"
-    #    organization: Default
-    #    credential_type: "TLS Certificate"
-    #    state: absent
-    #    controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
-    #    controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-    #    controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-    #    validate_certs: false
-    #    request_timeout: 10
+    - name: Delete ephemeral TLS credential
+      ansible.controller.credential:
+        name: "{{ _ephemeral_cred_name }}"
+        organization: Default
+        credential_type: "TLS Certificate"
+        state: absent
+        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
+        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+        validate_certs: false
+        request_timeout: 10
 
     - name: Summary
       ansible.builtin.debug:
@@ -220,10 +255,12 @@
           - "═══════════════════════════════════════════════"
           - "Certificate issued and distributed successfully"
           - "═══════════════════════════════════════════════"
-          - "Hostname: {{ cert_hostname }}"
-          - "ACME env: {{ cert_acme_env }}"
-          - "Targets:  {{ cert_target_hosts }}"
-          - "Cert:     {{ cert_dest_path }}"
-          - "Key:      {{ cert_key_dest_path }}"
+          - "Ansible host:  {{ cert_ansible_hostname }}"
+          - "Resolved FQDN: {{ cert_hostname }}"
+          - "Target IP:     {{ cert_target_ip }}"
+          - "ACME env:      {{ cert_acme_env }}"
+          - "Cert:          {{ cert_dest_path }}"
+          - "Key:           {{ cert_key_dest_path }}"
+          - "DNS TXT cleanup: {{ cert_cleanup_dns_record | bool }}"
           - "Ephemeral credential cleaned up"
           - "═══════════════════════════════════════════════"

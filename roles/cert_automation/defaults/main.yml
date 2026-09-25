@@ -18,7 +18,8 @@ cert_account_email: "matferna@redhat.com"
 
 # --- Domain / Route53 ---
 cert_route53_zone: ""
-cert_hostname: ""
+cert_ansible_hostname: ""
+cert_cleanup_dns_record: false
 
 # --- Certificate paths (defaults for distribute targets) ---
 cert_dest_path: "/etc/pki/tls/certs/fullchain.crt"

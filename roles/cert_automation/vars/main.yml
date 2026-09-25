@@ -59,8 +59,9 @@ controller_templates:
       name: "Certificate Parameters"
       description: "Issue a certificate and distribute to target hosts"
       spec:
-        - question_name: "Hostname (FQDN)"
-          variable: cert_hostname
+        - question_name: "Ansible Hostname"
+          question_description: "EC2 Name tag of the target host (e.g. aws_rhel9)"
+          variable: cert_ansible_hostname
           type: text
           required: true
         - question_name: "Route53 Zone"
@@ -81,11 +82,6 @@ controller_templates:
           type: text
           required: true
           default: "{{ cert_account_email }}"
-        - question_name: "Target hosts (comma-separated IPs)"
-          question_description: "Hosts to receive the certificate after issuance"
-          variable: cert_target_hosts
-          type: text
-          required: true
         - question_name: "Certificate destination path"
           variable: cert_dest_path
           type: text
@@ -96,6 +92,15 @@ controller_templates:
           type: text
           required: true
           default: "{{ cert_key_dest_path }}"
+        - question_name: "Clean up DNS TXT record after validation?"
+          question_description: "Set to false to preserve the record for auditability"
+          variable: cert_cleanup_dns_record
+          type: multiplechoice
+          required: true
+          default: "false"
+          choices:
+            - "false"
+            - "true"
 
   - name: "Cert - Distribute Certificate"
     organization: "{{ cert_aap_org }}"
@@ -110,7 +115,8 @@ controller_templates:
       name: "Distribution Parameters"
       description: "Distribute a certificate to target hosts (cert comes from TLS credential)"
       spec:
-        - question_name: "Target hosts (comma-separated IPs)"
+        - question_name: "Target hosts (comma-separated IPs or hostnames)"
+          question_description: "Resolved automatically when launched from Issue workflow"
           variable: cert_target_hosts
           type: text
           required: true
@@ -135,8 +141,9 @@ controller_workflows:
       name: "Staging to Production Parameters"
       description: "Certificate parameters for staged rollout"
       spec:
-        - question_name: "Hostname (FQDN)"
-          variable: cert_hostname
+        - question_name: "Ansible Hostname"
+          question_description: "EC2 Name tag of the target host (e.g. aws_rhel9)"
+          variable: cert_ansible_hostname
           type: text
           required: true
         - question_name: "Route53 Zone"
@@ -149,10 +156,6 @@ controller_workflows:
           type: text
           required: true
           default: "{{ cert_account_email }}"
-        - question_name: "Target hosts (comma-separated IPs)"
-          variable: cert_target_hosts
-          type: text
-          required: true
         - question_name: "Certificate destination path"
           variable: cert_dest_path
           type: text
@@ -163,6 +166,15 @@ controller_workflows:
           type: text
           required: true
           default: "{{ cert_key_dest_path }}"
+        - question_name: "Clean up DNS TXT record after validation?"
+          question_description: "Set to false to preserve the record for auditability"
+          variable: cert_cleanup_dns_record
+          type: multiplechoice
+          required: true
+          default: "false"
+          choices:
+            - "false"
+            - "true"
     simplified_workflow_nodes:
       - identifier: staging
         unified_job_template: "Cert - Issue Certificate"
