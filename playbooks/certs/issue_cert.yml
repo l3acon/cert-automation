@@ -49,12 +49,13 @@
           Verify the host exists and is running.
 
     - name: Set host facts from EC2 instance
+      vars:
+        _instance: "{{ ec2_lookup.instances[0] }}"
+        _dns_name: "{{ cert_ansible_hostname | replace('_', '-') }}.{{ cert_route53_zone }}"
       ansible.builtin.set_fact:
-        _ec2_instance: "{{ ec2_lookup.instances[0] }}"
-        cert_target_ip: "{{ ec2_lookup.instances[0].public_ip_address | default(ec2_lookup.instances[0].private_ip_address) }}"
-        cert_hostname: >-
-          {{ ec2_lookup.instances[0].tags.FQDN
-             | default(ec2_lookup.instances[0].public_dns_name) }}
+        _ec2_instance: "{{ _instance }}"
+        cert_target_ip: "{{ _instance.public_ip_address | default(_instance.private_ip_address) }}"
+        cert_hostname: "{{ _instance.tags.FQDN | default(_dns_name) }}"
 
     - name: Display resolved host info
       ansible.builtin.debug:
@@ -63,6 +64,18 @@
           - "Resolved FQDN:   {{ cert_hostname }}"
           - "Target IP:        {{ cert_target_ip }}"
           - "Instance ID:      {{ _ec2_instance.instance_id }}"
+
+    - name: Ensure A record exists for host in Route53
+      amazon.aws.route53:
+        zone: "{{ cert_route53_zone }}"
+        record: "{{ cert_hostname }}"
+        type: A
+        ttl: 300
+        state: present
+        overwrite: true
+        value:
+          - "{{ cert_target_ip }}"
+        wait: true
 
     # ── Issue the certificate ────────────────────────────────────────────
     - name: Ensure certificate directory exists

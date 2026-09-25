@@ -12,7 +12,7 @@
     aap_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
     aap_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
     cert_github_pat: "{{ lookup('env', 'GITHUB_PAT') }}"
-    cert_route53_zone: "{{ lookup('env', 'CERT_ROUTE53_ZONE') | default('sandbox5245.opentlc.com', true) }}"
+    cert_route53_zone: "{{ lookup('env', 'CERT_ROUTE53_ZONE') | default('p982f.sandbox5245.opentlc.com', true) }}"
 
   tasks:
     - name: Validate credentials
