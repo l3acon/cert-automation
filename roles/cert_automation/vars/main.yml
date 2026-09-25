@@ -5,29 +5,8 @@
 # =============================================================================
 
 # --- Custom Credential Type: TLS Certificate ---
-# Uses file injectors so AAP writes cert/key to temp files and exposes paths.
-controller_credential_types:
-  - name: "{{ cert_tls_credential_type_name }}"
-    kind: cloud
-    inputs:
-      fields:
-        - id: cert_fullchain
-          label: Full Chain Certificate
-          type: string
-          secret: true
-          multiline: true
-        - id: cert_private_key
-          label: Private Key
-          type: string
-          secret: true
-          multiline: true
-    injectors:
-      file:
-        template.cert_fullchain: "{% raw %}{{ cert_fullchain }}{% endraw %}"
-        template.cert_private_key: "{% raw %}{{ cert_private_key }}{% endraw %}"
-      env:
-        CERT_FULLCHAIN_FILE: "{% raw %}{{ tower.filename.cert_fullchain }}{% endraw %}"
-        CERT_PRIVATE_KEY_FILE: "{% raw %}{{ tower.filename.cert_private_key }}{% endraw %}"
+# Created directly in tasks/main.yml (dispatch has issues with !unsafe injectors).
+# Defined here for reference only.
 
 # --- SCM Credential ---
 controller_credentials:
