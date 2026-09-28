@@ -232,11 +232,10 @@
         status_code: [200, 204]
       loop: >-
         {{ _dist_jt_creds.json.results
-           | selectattr('credential_type', 'equalto', _cred_created.credential_type | int)
+           | selectattr('summary_fields.credential_type.name', 'equalto', 'TLS Certificate')
            | list }}
       loop_control:
         label: "{{ item.name }}"
-      when: _dist_jt_creds.json.results | length > 0
 
     - name: Attach ephemeral TLS credential to Distribute JT
       ansible.builtin.uri:
