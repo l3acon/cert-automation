@@ -1,7 +1,9 @@
 ---
 # Deploy Certificate Automation CasC to AAP.
+# Resolves Route53 zone from rosa.creds.yml automatically.
 # Usage:
 #   source .env && ansible-playbook deploy_certs.yml
+#   ansible-playbook deploy_certs.yml -e rosa_creds_path=/path/to/rosa.creds.yml
 - name: Deploy Certificate Automation to AAP
   hosts: localhost
   connection: local
@@ -12,7 +14,12 @@
     aap_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
     aap_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
     cert_github_pat: "{{ lookup('env', 'GITHUB_PAT') }}"
-    cert_route53_zone: "{{ lookup('env', 'CERT_ROUTE53_ZONE') | default('p982f.sandbox5245.opentlc.com', true) }}"
+    rosa_creds_path: "{{ playbook_dir }}/../mad-hatter/rosa.creds.yml"
+    _rosa_provision_data: >-
+      {{ (lookup('file', rosa_creds_path) | from_yaml_all | list)[0]
+         .status.resources[0].state.spec.vars.provision_data }}
+    cert_route53_zone: "{{ _rosa_provision_data.rosa_subdomain_base }}"
+    cert_aws_region: "{{ _rosa_provision_data.aws_default_region | default('us-east-2') }}"
 
   tasks:
     - name: Validate credentials
@@ -22,9 +29,17 @@
           - aap_username | length > 0
           - aap_password | length > 0
           - cert_github_pat | length > 0
+          - cert_route53_zone | length > 0
         fail_msg: >-
-          Missing credentials. Set CONTROLLER_HOST, CONTROLLER_USERNAME,
-          CONTROLLER_PASSWORD, and GITHUB_PAT.
+          Missing credentials or Route53 zone. Set CONTROLLER_HOST, CONTROLLER_USERNAME,
+          CONTROLLER_PASSWORD, GITHUB_PAT, and ensure rosa.creds.yml is accessible.
+
+    - name: Display resolved configuration
+      ansible.builtin.debug:
+        msg:
+          - "AAP: {{ aap_hostname }}"
+          - "Route53 zone: {{ cert_route53_zone }}"
+          - "AWS region: {{ cert_aws_region }}"
 
     - name: Configure AAP via CasC
       ansible.builtin.include_role:
