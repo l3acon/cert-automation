@@ -208,6 +208,36 @@
       ansible.builtin.set_fact:
         _dist_jt_id: "{{ _dist_jt_lookup.json.results[0].id }}"
 
+    - name: Get current credentials on Distribute JT
+      ansible.builtin.uri:
+        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
+        method: GET
+        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+        force_basic_auth: true
+        validate_certs: false
+        return_content: true
+      register: _dist_jt_creds
+
+    - name: Detach any existing TLS Certificate credentials from Distribute JT
+      ansible.builtin.uri:
+        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
+        method: POST
+        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body: "{{ {'id': item.id | int, 'disassociate': true} }}"
+        status_code: [200, 204]
+      loop: >-
+        {{ _dist_jt_creds.json.results
+           | selectattr('credential_type', 'equalto', _cred_created.credential_type | int)
+           | list }}
+      loop_control:
+        label: "{{ item.name }}"
+      when: _dist_jt_creds.json.results | length > 0
+
     - name: Attach ephemeral TLS credential to Distribute JT
       ansible.builtin.uri:
         url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
