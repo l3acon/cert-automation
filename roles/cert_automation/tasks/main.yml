@@ -1,34 +1,4 @@
 ---
-# Create TLS Certificate credential type first (dispatch has issues with !unsafe injectors)
-- name: Ensure TLS Certificate credential type exists
-  ansible.controller.credential_type:
-    name: "{{ cert_tls_credential_type_name }}"
-    kind: cloud
-    inputs:
-      fields:
-        - id: cert_fullchain
-          label: Full Chain Certificate
-          type: string
-          secret: true
-          multiline: true
-        - id: cert_private_key
-          label: Private Key
-          type: string
-          secret: true
-          multiline: true
-    injectors:
-      file:
-        template.cert_fullchain: !unsafe "{{ cert_fullchain }}"
-        template.cert_private_key: !unsafe "{{ cert_private_key }}"
-      env:
-        CERT_FULLCHAIN_FILE: !unsafe "{{ tower.filename.cert_fullchain }}"
-        CERT_PRIVATE_KEY_FILE: !unsafe "{{ tower.filename.cert_private_key }}"
-    state: present
-    controller_host: "{{ controller_host }}"
-    controller_username: "{{ controller_username }}"
-    controller_password: "{{ controller_password }}"
-    validate_certs: "{{ validate_certs | default(false) }}"
-
-- name: Dispatch remaining AAP Configuration as Code
+- name: Dispatch AAP Configuration as Code
   ansible.builtin.include_role:
     name: infra.aap_configuration.dispatch

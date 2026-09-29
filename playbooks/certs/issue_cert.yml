@@ -1,14 +1,15 @@
 ---
-# Issue a certificate via ACME DNS-01 with Route53, then orchestrate distribution.
+# Issue a certificate via ACME DNS-01 with Route53, store in AWS Secrets Manager,
+# then launch the Distribute JT to deploy it to target hosts.
 #
-# After issuing, this playbook:
-#   1. Creates an ephemeral TLS Certificate credential with the cert+key
-#   2. Updates the Distribute JT to attach the credential
-#   3. Launches the Distribute JT
-#   4. Waits for completion
-#   5. Deletes the ephemeral credential
+# Flow:
+#   1. Look up EC2 instance by Name tag → resolve FQDN + IP
+#   2. Ensure A record exists in Route53
+#   3. Issue cert via ACME DNS-01 challenge
+#   4. Store cert + key in AWS Secrets Manager
+#   5. Launch Distribute JT (reads cert from SM)
 #
-# Requires: AWS credential (Route53), AAP Credential (controller API for dispatch)
+# Requires: AWS credential (Route53 + EC2 + SM), AAP Credential (job_launch)
 - name: Issue certificate via ACME DNS-01 challenge with Route53
   hosts: localhost
   connection: local
@@ -24,6 +25,7 @@
                    'https://acme-staging-v02.api.letsencrypt.org/directory') }}
     acme_version: 2
     cert_base_path: "/tmp/certs/{{ cert_acme_env }}"
+    cert_sm_secret_prefix: "cert-automation"
     _distribute_jt_name: "Cert - Distribute Certificate"
 
   tasks:
@@ -60,7 +62,7 @@
         account_key_path: "{{ cert_base_path }}/letsencrypt-{{ cert_acme_env }}.pem"
         csr_path: "{{ cert_base_path }}/{{ cert_hostname }}.csr"
         crt_path: "{{ cert_base_path }}/{{ cert_hostname }}.crt"
-        _ephemeral_cred_name: "TLS Cert - {{ cert_hostname }} ({{ cert_acme_env }})"
+        cert_sm_secret_name: "{{ cert_sm_secret_prefix }}/certs/{{ cert_hostname }}/{{ cert_acme_env }}"
 
     - name: Display resolved host info
       ansible.builtin.debug:
@@ -69,6 +71,7 @@
           - "Resolved FQDN:   {{ cert_hostname }}"
           - "Target IP:        {{ cert_target_ip }}"
           - "Instance ID:      {{ _ec2_instance.instance_id }}"
+          - "SM secret path:   {{ cert_sm_secret_name }}"
 
     - name: Ensure A record exists for host in Route53
       amazon.aws.route53:
@@ -157,7 +160,7 @@
         value: >-
           "{{ acme_challenge.challenge_data[cert_hostname]['dns-01'].resource_value }}"
       when:
-        - cert_cleanup_dns_record | bool
+        - cert_cleanup_dns_record | default(false) | bool
         - acme_challenge is changed
         - cert_hostname in acme_challenge.challenge_data
 
@@ -168,92 +171,39 @@
           - "Full chain:   {{ fullchain_path }}"
           - "Private key:  {{ privatekey_path }}"
           - "Chain:        {{ chain_path }}"
-          - "DNS TXT record preserved: {{ not (cert_cleanup_dns_record | bool) }}"
+          - "DNS TXT record preserved: {{ not (cert_cleanup_dns_record | default(false) | bool) }}"
 
-    # ── Read cert content for credential creation ────────────────────────
-    - name: Read issued certificate and key
-      ansible.builtin.set_fact:
-        _cert_fullchain: "{{ lookup('file', fullchain_path) }}"
-        _cert_privatekey: "{{ lookup('file', privatekey_path) }}"
-
-    # ── Orchestrate distribution via dispatch ────────────────────────────
-    - name: Create ephemeral TLS credential with issued cert
-      ansible.controller.credential:
-        name: "{{ _ephemeral_cred_name }}"
-        organization: Default
-        credential_type: "TLS Certificate"
+    # ── Store cert in AWS Secrets Manager ────────────────────────────────
+    - name: Store certificate and key in Secrets Manager
+      amazon.aws.secretsmanager_secret:
+        name: "{{ cert_sm_secret_name }}"
         state: present
-        inputs:
-          cert_fullchain: "{{ _cert_fullchain }}"
-          cert_private_key: "{{ _cert_privatekey }}"
-        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
-        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        validate_certs: false
-        request_timeout: 10
-      register: _cred_created
+        secret_type: string
+        secret: >-
+          {{ {'fullchain': lookup('file', fullchain_path),
+              'private_key': lookup('file', privatekey_path),
+              'hostname': cert_hostname,
+              'acme_env': cert_acme_env,
+              'issued_by': cert_account_email,
+              'ansible_hostname': cert_ansible_hostname} | to_json }}
+        tags:
+          hostname: "{{ cert_hostname }}"
+          acme_env: "{{ cert_acme_env }}"
+          ansible_hostname: "{{ cert_ansible_hostname }}"
+          managed_by: cert-automation
 
-    - name: Look up Distribute JT
-      ansible.builtin.uri:
-        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/?name={{ _distribute_jt_name | urlencode }}"
-        method: GET
-        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        force_basic_auth: true
-        validate_certs: false
-        return_content: true
-      register: _dist_jt_lookup
+    - name: Confirm cert stored in Secrets Manager
+      ansible.builtin.debug:
+        msg: "Certificate stored in SM: {{ cert_sm_secret_name }}"
 
-    - name: Set distribute JT ID
-      ansible.builtin.set_fact:
-        _dist_jt_id: "{{ _dist_jt_lookup.json.results[0].id }}"
-
-    - name: Get current credentials on Distribute JT
-      ansible.builtin.uri:
-        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
-        method: GET
-        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        force_basic_auth: true
-        validate_certs: false
-        return_content: true
-      register: _dist_jt_creds
-
-    - name: Detach any existing TLS Certificate credentials from Distribute JT
-      ansible.builtin.uri:
-        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
-        method: POST
-        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        force_basic_auth: true
-        validate_certs: false
-        body_format: json
-        body: "{{ {'id': item.id | int, 'disassociate': true} }}"
-        status_code: [200, 204]
-      loop: >-
-        {{ _dist_jt_creds.json.results
-           | selectattr('summary_fields.credential_type.name', 'equalto', 'TLS Certificate')
-           | list }}
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Attach ephemeral TLS credential to Distribute JT
-      ansible.builtin.uri:
-        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
-        method: POST
-        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        force_basic_auth: true
-        validate_certs: false
-        body_format: json
-        body: "{{ {'id': _cred_created.id | int} }}"
-        status_code: [200, 204]
-
+    # ── Launch distribution ──────────────────────────────────────────────
     - name: Launch Distribute JT
       ansible.controller.job_launch:
         job_template: "{{ _distribute_jt_name }}"
         extra_vars:
           cert_target_hosts: "{{ cert_target_ip }}"
+          cert_sm_secret_name: "{{ cert_sm_secret_name }}"
+          cert_aws_region: "{{ cert_aws_region }}"
           cert_dest_path: "{{ cert_dest_path }}"
           cert_key_dest_path: "{{ cert_key_dest_path }}"
         wait: true
@@ -265,52 +215,20 @@
         request_timeout: 10
       register: _dist_job
 
-    - name: Display distribution result
-      ansible.builtin.debug:
-        msg:
-          - "Distribution job: {{ _dist_job.id | default('?') }}"
-          - "Status: {{ _dist_job.status | default('?') }}"
-
-    # ── Cleanup: conditionally remove ephemeral credential ──────────────
-    - name: Detach ephemeral TLS credential from Distribute JT
-      when: cert_cleanup_credential | default(false) | bool
-      ansible.builtin.uri:
-        url: "{{ lookup('env', 'CONTROLLER_HOST') | regex_replace('/$', '') }}/api/controller/v2/job_templates/{{ _dist_jt_id }}/credentials/"
-        method: POST
-        url_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        url_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        force_basic_auth: true
-        validate_certs: false
-        body_format: json
-        body: "{{ {'id': _cred_created.id | int, 'disassociate': true} }}"
-        status_code: [200, 204]
-
-    - name: Delete ephemeral TLS credential
-      when: cert_cleanup_credential | default(false) | bool
-      ansible.controller.credential:
-        name: "{{ _ephemeral_cred_name }}"
-        organization: Default
-        credential_type: "TLS Certificate"
-        state: absent
-        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
-        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        validate_certs: false
-        request_timeout: 10
-
     - name: Summary
       ansible.builtin.debug:
         msg:
-          - "═══════════════════════════════════════════════"
-          - "Certificate issued and distributed successfully"
-          - "═══════════════════════════════════════════════"
-          - "Ansible host:  {{ cert_ansible_hostname }}"
-          - "Resolved FQDN: {{ cert_hostname }}"
-          - "Target IP:     {{ cert_target_ip }}"
-          - "ACME env:      {{ cert_acme_env }}"
-          - "Cert:          {{ cert_dest_path }}"
-          - "Key:           {{ cert_key_dest_path }}"
-          - "DNS TXT cleanup: {{ cert_cleanup_dns_record | default(false) | bool }}"
-          - "Credential cleanup: {{ cert_cleanup_credential | default(false) | bool }}"
-          - "Credential name: {{ _ephemeral_cred_name }}"
-          - "═══════════════════════════════════════════════"
+          - "═══════════════════════════════════════════════════════"
+          - "Certificate issued, stored in SM, and distributed"
+          - "═══════════════════════════════════════════════════════"
+          - "Ansible host:     {{ cert_ansible_hostname }}"
+          - "Resolved FQDN:    {{ cert_hostname }}"
+          - "Target IP:        {{ cert_target_ip }}"
+          - "ACME env:         {{ cert_acme_env }}"
+          - "SM secret:        {{ cert_sm_secret_name }}"
+          - "Cert dest:        {{ cert_dest_path }}"
+          - "Key dest:         {{ cert_key_dest_path }}"
+          - "Distribute job:   {{ _dist_job.id | default('?') }}"
+          - "Distribute status: {{ _dist_job.status | default('?') }}"
+          - "DNS TXT cleanup:  {{ cert_cleanup_dns_record | default(false) | bool }}"
+          - "═══════════════════════════════════════════════════════"

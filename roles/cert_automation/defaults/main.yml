@@ -19,6 +19,10 @@ cert_account_email: "matferna@redhat.com"
 # --- AWS ---
 cert_aws_region: us-east-2
 
+# --- AWS Secrets Manager ---
+cert_sm_secret_prefix: "cert-automation"
+cert_sm_lookup_credential_name: "AWS SM Lookup - Cert Automation"
+
 # --- Domain / Route53 ---
 cert_route53_zone: ""
 cert_ansible_hostname: ""
@@ -30,10 +34,5 @@ cert_key_dest_path: "/etc/pki/tls/private/server.key"
 
 # --- AAP credential names ---
 cert_aws_credential_name: "AWS"
-cert_machine_credential_name: "APD Machine Credential"
+cert_machine_credential_name: "Machine - Cert Automation"
 cert_aap_credential_name: "AAP Credential"
-cert_tls_credential_type_name: "TLS Certificate"
-cert_ephemeral_credential_name: "TLS Cert - {{ cert_hostname | default('pending') }}"
-
-# --- APD Inventory ---
-cert_inventory_name: "Ansible Product Demos Inventory"

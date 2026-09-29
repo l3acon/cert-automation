@@ -1,17 +1,44 @@
 ---
 # Distribute a certificate to target hosts.
-# Cert and key are injected by the TLS Certificate credential as temp files.
-# Env vars CERT_FULLCHAIN_FILE and CERT_PRIVATE_KEY_FILE hold the file paths.
-- name: Build target host list
+# Cert and key are read from AWS Secrets Manager (stored there by the Issue JT).
+- name: Read certificate from Secrets Manager and build inventory
   hosts: localhost
   connection: local
   gather_facts: false
+
+  environment:
+    AWS_DEFAULT_REGION: "{{ cert_aws_region | default('us-east-2') }}"
+
   tasks:
+    - name: Read certificate from Secrets Manager
+      ansible.builtin.set_fact:
+        _cert_data: >-
+          {{ lookup('amazon.aws.aws_secretsmanager', cert_sm_secret_name,
+                    region=cert_aws_region) | from_json }}
+
+    - name: Validate secret contains expected fields
+      ansible.builtin.assert:
+        that:
+          - _cert_data.fullchain is defined
+          - _cert_data.private_key is defined
+        fail_msg: >-
+          SM secret '{{ cert_sm_secret_name }}' is missing fullchain or private_key fields.
+
+    - name: Display certificate metadata
+      ansible.builtin.debug:
+        msg:
+          - "SM secret:   {{ cert_sm_secret_name }}"
+          - "Hostname:    {{ _cert_data.hostname | default('unknown') }}"
+          - "ACME env:    {{ _cert_data.acme_env | default('unknown') }}"
+          - "Targets:     {{ cert_target_hosts }}"
+
     - name: Add target hosts to runtime inventory
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: cert_targets
         ansible_user: ec2-user
+        _fullchain: "{{ _cert_data.fullchain }}"
+        _private_key: "{{ _cert_data.private_key }}"
       loop: "{{ cert_target_hosts.split(',') | map('trim') | list }}"
 
 - name: Distribute certificate to target hosts
@@ -29,17 +56,18 @@
         - "{{ cert_dest_path }}"
         - "{{ cert_key_dest_path }}"
 
-    - name: Copy fullchain certificate
+    - name: Write fullchain certificate
       ansible.builtin.copy:
-        src: "{{ lookup('env', 'CERT_FULLCHAIN_FILE') }}"
+        content: "{{ _fullchain }}"
         dest: "{{ cert_dest_path }}"
         mode: "0644"
 
-    - name: Copy private key
+    - name: Write private key
       ansible.builtin.copy:
-        src: "{{ lookup('env', 'CERT_PRIVATE_KEY_FILE') }}"
+        content: "{{ _private_key }}"
         dest: "{{ cert_key_dest_path }}"
         mode: "0600"
+      no_log: true
 
     - name: Display deployed certificate info
       ansible.builtin.debug:
@@ -47,11 +75,3 @@
           - "Certificate deployed to {{ inventory_hostname }}"
           - "  Fullchain: {{ cert_dest_path }}"
           - "  Private key: {{ cert_key_dest_path }}"
-
-  handlers:
-    - name: Reload web services
-      listen: reload_services
-      ansible.builtin.debug:
-        msg: >-
-          Certificate deployed. Add service-specific reload tasks here
-          (e.g., nginx, httpd, automation-controller).

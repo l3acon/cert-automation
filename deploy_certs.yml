@@ -1,9 +1,9 @@
 ---
 # Deploy Certificate Automation CasC to AAP.
-# Resolves Route53 zone from rosa.creds.yml automatically.
+# Resolves Route53 zone and AWS creds from rosa.creds.yml automatically.
+#
 # Usage:
 #   source .env && ansible-playbook deploy_certs.yml
-#   ansible-playbook deploy_certs.yml -e rosa_creds_path=/path/to/rosa.creds.yml
 - name: Deploy Certificate Automation to AAP
   hosts: localhost
   connection: local
@@ -20,6 +20,14 @@
          .status.resources[0].state.spec.vars.provision_data }}
     cert_route53_zone: "{{ _rosa_provision_data.rosa_subdomain_base }}"
     cert_aws_region: "{{ _rosa_provision_data.aws_default_region | default('us-east-2') }}"
+    aws_access_key_id: "{{ _rosa_provision_data.aws_access_key_id }}"
+    aws_secret_access_key: "{{ _rosa_provision_data.aws_secret_access_key }}"
+    cert_sm_secret_prefix: "cert-automation"
+
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
+    AWS_DEFAULT_REGION: "{{ cert_aws_region }}"
 
   tasks:
     - name: Validate credentials
@@ -30,8 +38,10 @@
           - aap_password | length > 0
           - cert_github_pat | length > 0
           - cert_route53_zone | length > 0
+          - aws_access_key_id | length > 0
+          - aws_secret_access_key | length > 0
         fail_msg: >-
-          Missing credentials or Route53 zone. Set CONTROLLER_HOST, CONTROLLER_USERNAME,
+          Missing credentials. Set CONTROLLER_HOST, CONTROLLER_USERNAME,
           CONTROLLER_PASSWORD, GITHUB_PAT, and ensure rosa.creds.yml is accessible.
 
     - name: Display resolved configuration
@@ -41,6 +51,32 @@
           - "Route53 zone: {{ cert_route53_zone }}"
           - "AWS region: {{ cert_aws_region }}"
 
+    # ── Bootstrap: seed machine credential into Secrets Manager ─────────
+    - name: Check if machine credential secret exists in SM
+      amazon.aws.secretsmanager_secret:
+        name: "{{ cert_sm_secret_prefix }}/machine-credential"
+        state: present
+        secret_type: string
+        secret: >-
+          {{ {'ssh_key_data': lookup('env', 'MACHINE_SSH_KEY')
+              | default(lookup('file', '~/.ssh/id_rsa', errors='ignore')
+              | default('PLACEHOLDER_REPLACE_ME'), true)} | to_json }}
+        tags:
+          managed_by: cert-automation
+          purpose: machine-credential-ssh-key
+      register: _sm_machine_cred
+
+    - name: Note about machine credential
+      ansible.builtin.debug:
+        msg: >-
+          Machine credential secret: {{ cert_sm_secret_prefix }}/machine-credential
+          {% if 'PLACEHOLDER' in (_sm_machine_cred.secret | default('')) %}
+          ⚠️  Contains placeholder SSH key. Update it with:
+            aws secretsmanager put-secret-value --secret-id {{ cert_sm_secret_prefix }}/machine-credential
+              --secret-string '{"ssh_key_data": "<your-private-key>"}'
+          {% endif %}
+
+    # ── Deploy CaC to AAP ───────────────────────────────────────────────
     - name: Configure AAP via CasC
       ansible.builtin.include_role:
         name: cert_automation
