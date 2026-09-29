@@ -53,7 +53,7 @@
 
     # ── Bootstrap: seed machine credential into Secrets Manager ─────────
     - name: Check if machine credential secret exists in SM
-      amazon.aws.secretsmanager_secret:
+      community.aws.secretsmanager_secret:
         name: "{{ cert_sm_secret_prefix }}/machine-credential"
         state: present
         secret_type: string

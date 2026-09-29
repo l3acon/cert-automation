@@ -13,7 +13,7 @@
     - name: Read certificate from Secrets Manager
       ansible.builtin.set_fact:
         _cert_data: >-
-          {{ lookup('amazon.aws.aws_secretsmanager', cert_sm_secret_name,
+          {{ lookup('amazon.aws.secretsmanager_secret', cert_sm_secret_name,
                     region=cert_aws_region) | from_json }}
 
     - name: Validate secret contains expected fields

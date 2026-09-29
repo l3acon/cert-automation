@@ -175,7 +175,7 @@
 
     # ── Store cert in AWS Secrets Manager ────────────────────────────────
     - name: Store certificate and key in Secrets Manager
-      amazon.aws.secretsmanager_secret:
+      community.aws.secretsmanager_secret:
         name: "{{ cert_sm_secret_name }}"
         state: present
         secret_type: string
