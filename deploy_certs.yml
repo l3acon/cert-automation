@@ -51,30 +51,34 @@
           - "Route53 zone: {{ cert_route53_zone }}"
           - "AWS region: {{ cert_aws_region }}"
 
-    # ── Bootstrap: seed machine credential into Secrets Manager ─────────
-    - name: Check if machine credential secret exists in SM
+    # ── Bootstrap: seed machine credential SSH key into Secrets Manager ──
+    # AAP SM lookup returns the full secret value, so each field gets its own secret.
+    - name: Resolve SSH private key for machine credential
+      ansible.builtin.set_fact:
+        _machine_ssh_key: >-
+          {{ lookup('env', 'MACHINE_SSH_KEY')
+             | default(lookup('file', '~/.ssh/id_rsa', errors='ignore')
+             | default('', true), true) }}
+
+    - name: Store machine credential SSH key in Secrets Manager
       community.aws.secretsmanager_secret:
-        name: "{{ cert_sm_secret_prefix }}/machine-credential"
+        name: "{{ cert_sm_secret_prefix }}/machine-credential/ssh_key_data"
         state: present
         secret_type: string
-        secret: >-
-          {{ {'ssh_key_data': lookup('env', 'MACHINE_SSH_KEY')
-              | default(lookup('file', '~/.ssh/id_rsa', errors='ignore')
-              | default('PLACEHOLDER_REPLACE_ME'), true)} | to_json }}
+        secret: "{{ _machine_ssh_key }}"
         tags:
           managed_by: cert-automation
           purpose: machine-credential-ssh-key
-      register: _sm_machine_cred
+      when: _machine_ssh_key | length > 0
 
-    - name: Note about machine credential
+    - name: Warn if no SSH key was found
       ansible.builtin.debug:
         msg: >-
-          Machine credential secret: {{ cert_sm_secret_prefix }}/machine-credential
-          {% if 'PLACEHOLDER' in (_sm_machine_cred.secret | default('')) %}
-          ⚠️  Contains placeholder SSH key. Update it with:
-            aws secretsmanager put-secret-value --secret-id {{ cert_sm_secret_prefix }}/machine-credential
-              --secret-string '{"ssh_key_data": "<your-private-key>"}'
-          {% endif %}
+          ⚠️  No SSH key found. Seed it manually:
+            aws secretsmanager put-secret-value
+              --secret-id {{ cert_sm_secret_prefix }}/machine-credential/ssh_key_data
+              --secret-string "$(cat ~/.ssh/your_key)"
+      when: _machine_ssh_key | length == 0
 
     # ── Deploy CaC to AAP ───────────────────────────────────────────────
     - name: Configure AAP via CasC

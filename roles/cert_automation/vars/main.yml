@@ -21,11 +21,10 @@ controller_credentials:
   # Secret zero: stored directly in AAP, provides access to Secrets Manager
   - name: "{{ cert_sm_lookup_credential_name }}"
     organization: "{{ cert_aap_org }}"
-    credential_type: "Amazon Web Services Secrets Manager Lookup"
+    credential_type: "AWS Secrets Manager lookup"
     inputs:
       aws_access_key: "{{ aws_access_key_id }}"
       aws_secret_key: "{{ aws_secret_access_key }}"
-      region: "{{ cert_aws_region }}"
 
   # Machine credential — fields pulled from SM at job launch time
   - name: "{{ cert_machine_credential_name }}"
@@ -35,14 +34,15 @@ controller_credentials:
       username: ec2-user
 
 # --- Credential Input Sources (SM → AAP credentials) ---
+# AAP pulls the full secret value from SM and injects it into the credential field.
+# The SM secret must contain the raw value (e.g., raw SSH private key text).
 controller_credential_input_sources:
   - source_credential: "{{ cert_sm_lookup_credential_name }}"
     target_credential: "{{ cert_machine_credential_name }}"
     input_field_name: ssh_key_data
     metadata:
-      secret_name_or_id: "{{ cert_sm_secret_prefix }}/machine-credential"
-      secret_key: ssh_key_data
-      secret_version: AWSCURRENT
+      region_name: "{{ cert_aws_region }}"
+      secret_name: "{{ cert_sm_secret_prefix }}/machine-credential/ssh_key_data"
 
 # --- Projects ---
 controller_projects:
