@@ -143,43 +143,110 @@ controller_templates:
     credentials:
       - "{{ cert_aws_credential_name }}"
       - "{{ cert_machine_credential_name }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      cert_aws_region: "{{ cert_aws_region }}"
+      cert_dest_path: "{{ cert_dest_path }}"
+      cert_key_dest_path: "{{ cert_key_dest_path }}"
     survey_enabled: true
     survey_spec:
       name: "Distribution Parameters"
       description: "Distribute a certificate from Secrets Manager to target hosts"
       spec:
         - question_name: "Target hosts (comma-separated IPs or hostnames)"
-          question_description: "Resolved automatically when launched from Issue JT"
+          question_description: "Resolved automatically via set_stats from the Issue JT"
           variable: cert_target_hosts
           type: text
           required: true
         - question_name: "Secrets Manager secret name"
-          question_description: "SM path containing the cert (set automatically by Issue JT)"
+          question_description: "SM path containing the cert (set automatically via set_stats from Issue JT)"
           variable: cert_sm_secret_name
           type: text
           required: true
-        - question_name: "AWS Region"
-          variable: cert_aws_region
-          type: text
-          required: true
-          default: "{{ cert_aws_region }}"
-        - question_name: "Certificate destination path"
-          variable: cert_dest_path
-          type: text
-          required: true
-          default: "{{ cert_dest_path }}"
-        - question_name: "Private key destination path"
-          variable: cert_key_dest_path
-          type: text
-          required: true
-          default: "{{ cert_key_dest_path }}"
 
-# --- Workflow: Staging to Production ---
+  - name: "Cert - Notify Failure"
+    organization: "{{ cert_aap_org }}"
+    project: "{{ cert_aap_project_name }}"
+    inventory: "Cert Automation - Localhost"
+    playbook: playbooks/certs/notify_failure.yml
+    execution_environment: "{{ cert_aap_ee_name }}"
+    ask_variables_on_launch: true
+    survey_enabled: false
+
+# --- Workflows ---
 controller_workflows:
+  # Two-node workflow: Issue → Distribute (single environment)
+  - name: "Cert - Issue and Distribute"
+    organization: "{{ cert_aap_org }}"
+    description: >-
+      Issue a certificate via Let's Encrypt (DNS-01 / Route53), store in Secrets Manager,
+      then distribute to the target host. On failure, send a notification.
+    survey_enabled: true
+    destroy_current_nodes: true
+    survey_spec:
+      name: "Issue and Distribute Parameters"
+      description: "End-to-end certificate issuance and distribution"
+      spec:
+        - question_name: "Ansible Hostname"
+          question_description: "EC2 Name tag of the target host (e.g. aws_rhel9)"
+          variable: cert_ansible_hostname
+          type: text
+          required: true
+        - question_name: "Route53 Zone"
+          variable: cert_route53_zone
+          type: text
+          required: true
+          default: "{{ cert_route53_zone }}"
+        - question_name: "ACME Environment"
+          variable: cert_acme_env
+          type: multiplechoice
+          required: true
+          default: "{{ cert_acme_env }}"
+          choices:
+            - staging
+            - production
+        - question_name: "Account Email"
+          variable: cert_account_email
+          type: text
+          required: true
+          default: "{{ cert_account_email }}"
+        - question_name: "Clean up DNS TXT record?"
+          variable: cert_cleanup_dns_record
+          type: multiplechoice
+          required: true
+          default: "false"
+          choices:
+            - "false"
+            - "true"
+    simplified_workflow_nodes:
+      - identifier: issue
+        unified_job_template: "Cert - Issue Certificate"
+        success_nodes:
+          - distribute
+        failure_nodes:
+          - notify-issue-failed
+      - identifier: distribute
+        unified_job_template: "Cert - Distribute Certificate"
+        failure_nodes:
+          - notify-distribute-failed
+      - identifier: notify-issue-failed
+        unified_job_template: "Cert - Notify Failure"
+        extra_data:
+          cert_notify_stage: "Issue Certificate"
+      - identifier: notify-distribute-failed
+        unified_job_template: "Cert - Notify Failure"
+        extra_data:
+          cert_notify_stage: "Distribute Certificate"
+
+  # Four-node workflow: Staging (issue → distribute) → Production (issue → distribute)
   - name: "Cert - Staging to Production"
     organization: "{{ cert_aap_org }}"
-    description: "Issue and distribute a certificate in staging, then repeat in production on success"
+    description: >-
+      Full staged rollout: issue and distribute a staging (test) certificate first,
+      then on success repeat with a production (trusted) certificate. Each step has
+      a failure notification path.
     survey_enabled: true
+    destroy_current_nodes: true
     survey_spec:
       name: "Staging to Production Parameters"
       description: "Certificate parameters for staged rollout"
@@ -199,18 +266,7 @@ controller_workflows:
           type: text
           required: true
           default: "{{ cert_account_email }}"
-        - question_name: "Certificate destination path"
-          variable: cert_dest_path
-          type: text
-          required: true
-          default: "{{ cert_dest_path }}"
-        - question_name: "Private key destination path"
-          variable: cert_key_dest_path
-          type: text
-          required: true
-          default: "{{ cert_key_dest_path }}"
-        - question_name: "Clean up DNS TXT record after validation?"
-          question_description: "Set to false to preserve the record for auditability"
+        - question_name: "Clean up DNS TXT record?"
           variable: cert_cleanup_dns_record
           type: multiplechoice
           required: true
@@ -219,13 +275,52 @@ controller_workflows:
             - "false"
             - "true"
     simplified_workflow_nodes:
-      - identifier: staging
+      # ── Staging ────────────────────────────────────────────────
+      - identifier: staging-issue
         unified_job_template: "Cert - Issue Certificate"
         extra_data:
           cert_acme_env: staging
         success_nodes:
-          - production
-      - identifier: production
+          - staging-distribute
+        failure_nodes:
+          - notify-staging-issue-failed
+      - identifier: staging-distribute
+        unified_job_template: "Cert - Distribute Certificate"
+        extra_data:
+          cert_acme_env: staging
+        success_nodes:
+          - production-issue
+        failure_nodes:
+          - notify-staging-distribute-failed
+      # ── Production ────────────────────────────────────────────
+      - identifier: production-issue
         unified_job_template: "Cert - Issue Certificate"
         extra_data:
           cert_acme_env: production
+        success_nodes:
+          - production-distribute
+        failure_nodes:
+          - notify-production-issue-failed
+      - identifier: production-distribute
+        unified_job_template: "Cert - Distribute Certificate"
+        extra_data:
+          cert_acme_env: production
+        failure_nodes:
+          - notify-production-distribute-failed
+      # ── Failure notifications ─────────────────────────────────
+      - identifier: notify-staging-issue-failed
+        unified_job_template: "Cert - Notify Failure"
+        extra_data:
+          cert_notify_stage: "Staging - Issue Certificate"
+      - identifier: notify-staging-distribute-failed
+        unified_job_template: "Cert - Notify Failure"
+        extra_data:
+          cert_notify_stage: "Staging - Distribute Certificate"
+      - identifier: notify-production-issue-failed
+        unified_job_template: "Cert - Notify Failure"
+        extra_data:
+          cert_notify_stage: "Production - Issue Certificate"
+      - identifier: notify-production-distribute-failed
+        unified_job_template: "Cert - Notify Failure"
+        extra_data:
+          cert_notify_stage: "Production - Distribute Certificate"

@@ -1,0 +1,43 @@
+---
+# Workflow failure notification stub.
+# Currently logs a debug message; swap for Mattermost, ServiceNow, or Slack
+# integration later by adding the appropriate module call.
+- name: Send failure notification
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Build notification message
+      ansible.builtin.set_fact:
+        _notify_msg: >-
+          CERTIFICATE WORKFLOW FAILURE — {{ cert_notify_stage | default('unknown stage') }}
+          | Host: {{ cert_ansible_hostname | default('unknown') }}
+          | Env: {{ cert_acme_env | default('unknown') }}
+          | Time: {{ now(utc=true).isoformat() }}
+
+    - name: Log failure notification (debug)
+      ansible.builtin.debug:
+        msg:
+          - "════════════════════════════════════════════════════════"
+          - "🚨 {{ _notify_msg }}"
+          - "════════════════════════════════════════════════════════"
+          - "This is a placeholder notification."
+          - "Future integrations: Mattermost, ServiceNow, Slack"
+          - "════════════════════════════════════════════════════════"
+
+    # --- Mattermost example (uncomment when ready) ---
+    # - name: Send Mattermost notification
+    #   ansible.builtin.uri:
+    #     url: "{{ cert_mattermost_webhook_url }}"
+    #     method: POST
+    #     body_format: json
+    #     body:
+    #       text: "{{ _notify_msg }}"
+
+    # --- ServiceNow example (uncomment when ready) ---
+    # - name: Create ServiceNow incident
+    #   servicenow.itsm.incident:
+    #     state: new
+    #     short_description: "{{ _notify_msg }}"
+    #     description: "Certificate workflow failure. Check AAP job logs."

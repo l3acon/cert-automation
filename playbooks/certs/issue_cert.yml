@@ -26,7 +26,6 @@
     acme_version: 2
     cert_base_path: "/tmp/certs/{{ cert_acme_env }}"
     cert_sm_secret_prefix: "cert-automation"
-    _distribute_jt_name: "Cert - Distribute Certificate"
 
   tasks:
     # ── Resolve ansible hostname to FQDN + IP via EC2 ───────────────────
@@ -196,39 +195,23 @@
       ansible.builtin.debug:
         msg: "Certificate stored in SM: {{ cert_sm_secret_name }}"
 
-    # ── Launch distribution ──────────────────────────────────────────────
-    - name: Launch Distribute JT
-      ansible.controller.job_launch:
-        job_template: "{{ _distribute_jt_name }}"
-        extra_vars:
+    # ── Set artifacts for downstream workflow nodes ─────────────────────
+    - name: Set stats for workflow (consumed by Distribute node)
+      ansible.builtin.set_stats:
+        data:
           cert_target_hosts: "{{ cert_target_ip }}"
           cert_sm_secret_name: "{{ cert_sm_secret_name }}"
-          cert_aws_region: "{{ cert_aws_region }}"
-          cert_dest_path: "{{ cert_dest_path }}"
-          cert_key_dest_path: "{{ cert_key_dest_path }}"
-        wait: true
-        timeout: 600
-        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') }}"
-        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
-        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
-        validate_certs: false
-        request_timeout: 10
-      register: _dist_job
 
     - name: Summary
       ansible.builtin.debug:
         msg:
           - "═══════════════════════════════════════════════════════"
-          - "Certificate issued, stored in SM, and distributed"
+          - "Certificate issued and stored in Secrets Manager"
           - "═══════════════════════════════════════════════════════"
           - "Ansible host:     {{ cert_ansible_hostname }}"
           - "Resolved FQDN:    {{ cert_hostname }}"
           - "Target IP:        {{ cert_target_ip }}"
           - "ACME env:         {{ cert_acme_env }}"
           - "SM secret:        {{ cert_sm_secret_name }}"
-          - "Cert dest:        {{ cert_dest_path }}"
-          - "Key dest:         {{ cert_key_dest_path }}"
-          - "Distribute job:   {{ _dist_job.id | default('?') }}"
-          - "Distribute status: {{ _dist_job.status | default('?') }}"
           - "DNS TXT cleanup:  {{ cert_cleanup_dns_record | default(false) | bool }}"
           - "═══════════════════════════════════════════════════════"
