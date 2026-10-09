@@ -1,6 +1,10 @@
 ---
 # Deploy Certificate Automation CasC to AAP.
-# Resolves Route53 zone and AWS creds from rosa.creds.yml automatically.
+#
+# AWS credentials and Route53 zone can be provided via:
+#   1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, CERT_ROUTE53_ZONE)
+#   2. ROSA/RHDP rosa.creds.yml (auto-parsed if present)
+#   3. Extra vars on the command line
 #
 # Usage:
 #   source .env && ansible-playbook deploy_certs.yml
@@ -10,18 +14,32 @@
   gather_facts: false
 
   vars:
+    # --- AAP connection ---
     aap_hostname: "{{ lookup('env', 'CONTROLLER_HOST') }}"
     aap_username: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
     aap_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
     cert_github_pat: "{{ lookup('env', 'GITHUB_PAT') }}"
+
+    # --- AWS credential resolution (env vars > rosa.creds.yml > extra vars) ---
     rosa_creds_path: "{{ playbook_dir }}/../mad-hatter/rosa.creds.yml"
+    _rosa_available: "{{ lookup('file', rosa_creds_path, errors='ignore') | default('', true) | length > 0 }}"
     _rosa_provision_data: >-
-      {{ (lookup('file', rosa_creds_path) | from_yaml_all | list)[0]
-         .status.resources[0].state.spec.vars.provision_data }}
-    cert_route53_zone: "{{ _rosa_provision_data.rosa_subdomain_base }}"
-    cert_aws_region: "{{ _rosa_provision_data.aws_default_region | default('us-east-2') }}"
-    aws_access_key_id: "{{ _rosa_provision_data.aws_access_key_id }}"
-    aws_secret_access_key: "{{ _rosa_provision_data.aws_secret_access_key }}"
+      {{ (lookup('file', rosa_creds_path, errors='ignore') | default('', true) | from_yaml_all | list)[0]
+         .status.resources[0].state.spec.vars.provision_data
+         if _rosa_available | bool else {} }}
+
+    aws_access_key_id: >-
+      {{ lookup('env', 'AWS_ACCESS_KEY_ID')
+         | default(_rosa_provision_data.aws_access_key_id | default(''), true) }}
+    aws_secret_access_key: >-
+      {{ lookup('env', 'AWS_SECRET_ACCESS_KEY')
+         | default(_rosa_provision_data.aws_secret_access_key | default(''), true) }}
+    cert_aws_region: >-
+      {{ lookup('env', 'AWS_DEFAULT_REGION')
+         | default(_rosa_provision_data.aws_default_region | default('us-east-2'), true) }}
+    cert_route53_zone: >-
+      {{ lookup('env', 'CERT_ROUTE53_ZONE')
+         | default(_rosa_provision_data.rosa_subdomain_base | default(''), true) }}
     cert_sm_secret_prefix: "cert-automation"
 
   environment:
@@ -30,35 +48,44 @@
     AWS_DEFAULT_REGION: "{{ cert_aws_region }}"
 
   tasks:
-    - name: Validate credentials
+    - name: Validate AAP credentials
       ansible.builtin.assert:
         that:
           - aap_hostname | length > 0
           - aap_username | length > 0
           - aap_password | length > 0
           - cert_github_pat | length > 0
-          - cert_route53_zone | length > 0
+        fail_msg: >-
+          Missing AAP credentials. Ensure .env has CONTROLLER_HOST,
+          CONTROLLER_USERNAME, CONTROLLER_PASSWORD, and GITHUB_PAT.
+
+    - name: Validate AWS credentials
+      ansible.builtin.assert:
+        that:
           - aws_access_key_id | length > 0
           - aws_secret_access_key | length > 0
+          - cert_route53_zone | length > 0
         fail_msg: >-
-          Missing credentials. Set CONTROLLER_HOST, CONTROLLER_USERNAME,
-          CONTROLLER_PASSWORD, GITHUB_PAT, and ensure rosa.creds.yml is accessible.
+          Missing AWS credentials or Route53 zone. Provide them via environment
+          variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, CERT_ROUTE53_ZONE)
+          or ensure rosa.creds.yml is accessible at {{ rosa_creds_path }}.
 
     - name: Display resolved configuration
       ansible.builtin.debug:
         msg:
-          - "AAP: {{ aap_hostname }}"
+          - "AAP:          {{ aap_hostname }}"
           - "Route53 zone: {{ cert_route53_zone }}"
-          - "AWS region: {{ cert_aws_region }}"
+          - "AWS region:   {{ cert_aws_region }}"
+          - "AWS source:   {{ 'rosa.creds.yml' if _rosa_available | bool else 'environment variables' }}"
 
     # ── Bootstrap: seed machine credential SSH key into Secrets Manager ──
-    # AAP SM lookup returns the full secret value, so each field gets its own secret.
     - name: Resolve SSH private key for machine credential
       ansible.builtin.set_fact:
         _machine_ssh_key: >-
           {{ lookup('env', 'MACHINE_SSH_KEY')
              | default(lookup('file', '~/.ssh/id_rsa', errors='ignore')
-             | default('', true), true) }}
+             | default(lookup('file', '~/.ssh/id_ed25519', errors='ignore')
+             | default('', true), true), true) }}
 
     - name: Store machine credential SSH key in Secrets Manager
       community.aws.secretsmanager_secret:
