@@ -107,12 +107,33 @@
               --secret-string "$(cat ~/.ssh/your_key)"
       when: _machine_ssh_key | length == 0
 
+    # ── Obtain OAuth token for AAP 2.5 gateway compatibility ────────────
+    - name: Create short-lived OAuth token for CaC dispatch
+      ansible.controller.token:
+        state: present
+        scope: write
+        description: "cert-automation CaC deploy"
+        controller_host: "{{ aap_hostname }}"
+        controller_username: "{{ aap_username }}"
+        controller_password: "{{ aap_password }}"
+        validate_certs: false
+      register: _aap_token
+
     # ── Deploy CaC to AAP ───────────────────────────────────────────────
     - name: Configure AAP via CasC
       ansible.builtin.include_role:
         name: cert_automation
       vars:
         controller_host: "{{ aap_hostname }}"
+        controller_oauthtoken: "{{ _aap_token.ansible_facts.controller_token.token }}"
+        validate_certs: false
+
+    - name: Clean up OAuth token
+      ansible.controller.token:
+        existing_token_id: "{{ _aap_token.ansible_facts.controller_token.id }}"
+        state: absent
+        controller_host: "{{ aap_hostname }}"
         controller_username: "{{ aap_username }}"
         controller_password: "{{ aap_password }}"
         validate_certs: false
+      ignore_errors: true
